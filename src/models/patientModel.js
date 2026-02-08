@@ -1,29 +1,104 @@
-import { z } from 'zod';
+// models/patientModel.js
+import mongoose from 'mongoose';
 
-// patient collection
-const PATIENT_COLLECTION_NAME = 'patients';
-// patient schema
-const PATIENT_COLLECTION_SCHEMA = z.object({
-    userId: z.string(),
+const COLLECTION_NAME = 'patients';
 
-    fullName: z.string().min(2),
+const PATIENT_STATUS = {
+    ACTIVE: 'ACTIVE',
+    INACTIVE: 'INACTIVE',
+    DECEASED: 'DECEASED',
+};
 
-    gender: z.enum(['M', 'F']),
-    birthYear: z
-        .number()
-        .int()
-        .min(1900)
-        .max(new Date().getFullYear()),
+const patientSchema = new mongoose.Schema(
+    {
+        userId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'users',
+            required: true,
+            unique: true,
+        },
 
-    phoneEncrypted: z.string().optional(),
-    emailEncrypted: z.string().optional(),
+        fullName: {
+            type: String,
+            required: true,
+            minlength: 2,
+        },
 
-    status: z.enum(['ACTIVE', 'INACTIVE', 'DECEASED']).default('ACTIVE'),
+        gender: {
+            type: String,
+            enum: ['M', 'F'],
+            required: true,
+        },
 
-    createdAt: z.date(),
-    updatedAt: z.date(),
-    deletedAt: z
-        .date()
-        .nullable()
-        .optional(),
-});
+        birthYear: {
+            type: Number,
+            min: 1900,
+            max: new Date().getFullYear(),
+            required: true,
+        },
+
+        phoneEncrypted: {
+            type: String,
+            default: null,
+        },
+
+        emailEncrypted: {
+            type: String,
+            default: null,
+        },
+
+        status: {
+            type: String,
+            enum: Object.values(PATIENT_STATUS),
+            default: PATIENT_STATUS.ACTIVE,
+        },
+
+        deletedAt: {
+            type: Date,
+            default: null,
+        },
+    },
+    {
+        timestamps: true,
+        versionKey: false,
+    },
+);
+
+const PatientModel = mongoose.model(COLLECTION_NAME, patientSchema);
+
+const createNew = async (data) => {
+    return await PatientModel.create(data);
+};
+
+const findByUserId = async (userId) => {
+    return await PatientModel.findOne({
+        userId,
+        deletedAt: null,
+    }).lean();
+};
+
+const findById = async (patientId) => {
+    return await PatientModel.findById(patientId);
+};
+
+const updateById = async (patientId, updateData) => {
+    return await PatientModel.findByIdAndUpdate(patientId, updateData, { new: true, runValidators: true });
+};
+
+const softDelete = async (patientId) => {
+    return await PatientModel.findByIdAndUpdate(
+        patientId,
+        { deletedAt: new Date(), status: PATIENT_STATUS.INACTIVE },
+        { new: true },
+    );
+};
+
+export const patientModel = {
+    PATIENT_STATUS,
+    PatientModel,
+    createNew,
+    findByUserId,
+    findById,
+    updateById,
+    softDelete,
+};

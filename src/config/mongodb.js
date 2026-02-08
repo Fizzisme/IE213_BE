@@ -1,29 +1,21 @@
-import { MongoClient, ServerApiVersion } from 'mongodb';
-import { env } from '~/config/environment';
+import mongoose from 'mongoose';
+import { env } from '~/config/environment.js';
 
-// khoi tao 1 doi tuong ban dau
-let databaseInstance = null;
+const MONGODB_URI = env.MONGODB_URI;
 
-// khoi tao ClientInstance de connect
-const mongoClientInstance = new MongoClient(env.MONGODB_URI, {
-    serverApi: {
-        version: ServerApiVersion.v1,
-        strict: true,
-        deprecationErrors: true,
-    },
-});
+if (!MONGODB_URI) {
+    throw new Error('❌ MONGO_URI is not defined');
+}
 
-export const CONNECT_DB = async () => {
-    await mongoClientInstance.connect();
+export const connectDB = async () => {
+    try {
+        await mongoose.connect(MONGODB_URI, {
+            dbName: env.DATABASE_NAME,
+        });
 
-    databaseInstance = mongoClientInstance.db(env.DATABASE_NAME);
-};
-
-export const GET_DB = () => {
-    if (!databaseInstance) throw new Error('Database not found');
-    return databaseInstance;
-};
-
-export const CLOSE_DB = async () => {
-    await mongoClientInstance.close();
+        console.log('✅ MongoDB connected');
+    } catch (error) {
+        console.error('❌ MongoDB connection failed', error);
+        process.exit(1);
+    }
 };

@@ -1,26 +1,119 @@
-import { z } from 'zod';
+// models/userModel.js
+import mongoose from 'mongoose';
 
-// create array of auth provider
-const AuthProviderSchema = z.object({
-    type: z.enum(['PHONE', 'WALLET']),
-    phoneHash: z.string().optional(),
-    passwordHash: z.string().optional(),
-    walletAddress: z.string().optional(),
-});
+const COLLECTION_NAME = 'users';
 
-// user collection
-const USER_COLLECTION_NAME = 'users';
-// user schema
-const USER_COLLECTION_SCHEMA = z.object({
-    authProviders: z.array(AuthProviderSchema).min(1),
-    role: z.enum(['PATIENT', 'DOCTOR', 'ADMIN']),
-    status: z.enum(['ACTIVE', 'BLOCKED']),
-    createdAt: z.date(),
-    updatedAt: z.date(),
-    _destroy: z.boolean().default(false),
-});
+const USER_ROLES = {
+    PATIENT: 'PATIENT',
+    DOCTOR: 'DOCTOR',
+    ADMIN: 'ADMIN',
+};
 
-//index
-db.users.createIndex({ 'authProviders.phoneHash': 1 }, { unique: true, sparse: true });
+const USER_STATUS = {
+    ACTIVE: 'ACTIVE',
+    BLOCKED: 'BLOCKED',
+};
 
-db.users.createIndex({ 'authProviders.walletAddress': 1 }, { unique: true, sparse: true });
+const authProviderSchema = new mongoose.Schema(
+    {
+        type: {
+            type: String,
+            enum: ['PHONE', 'WALLET'],
+            required: true,
+        },
+        phoneHash: {
+            type: String,
+            default: null,
+        },
+        passwordHash: {
+            type: String,
+            default: null,
+        },
+        walletAddress: {
+            type: String,
+            default: null,
+        },
+    },
+    { _id: false },
+);
+
+const userSchema = new mongoose.Schema(
+    {
+        authProviders: {
+            type: [authProviderSchema],
+            required: true,
+            validate: [(v) => v.length > 0, 'authProviders is required'],
+        },
+
+        role: {
+            type: String,
+            enum: Object.values(USER_ROLES),
+            required: true,
+            default: USER_ROLES.PATIENT,
+        },
+
+        cccd: {
+            type: String,
+            required: true,
+        },
+
+        status: {
+            type: String,
+            enum: Object.values(USER_STATUS),
+            default: USER_STATUS.ACTIVE,
+        },
+
+        _destroy: {
+            type: Boolean,
+            default: false,
+        },
+    },
+    {
+        timestamps: true,
+        versionKey: false,
+    },
+);
+
+userSchema.index({ cccd: 1 }, { unique: true, sparse: true });
+userSchema.index({ 'authProviders.phoneHash': 1 }, { unique: true, sparse: true });
+
+userSchema.index({ 'authProviders.walletAddress': 1 }, { unique: true, sparse: true });
+
+const UserModel = mongoose.model(COLLECTION_NAME, userSchema);
+
+const createNew = async (data) => {
+    return await UserModel.create(data);
+};
+
+const findByPhoneHash = async (phoneHash) => {
+    return await UserModel.findOne({
+        'authProviders.phoneHash': phoneHash,
+        _destroy: false,
+    }).lean();
+};
+
+const findByWalletAddress = async (walletAddress) => {
+    return await UserModel.findOne({
+        'authProviders.walletAddress': walletAddress,
+        _destroy: false,
+    }).lean();
+};
+
+const findById = async (userId) => {
+    return await UserModel.findById(userId);
+};
+
+const updateById = async (userId, updateData) => {
+    return await UserModel.findByIdAndUpdate(userId, updateData, { new: true, runValidators: true });
+};
+
+export const userModel = {
+    USER_ROLES,
+    USER_STATUS,
+    UserModel,
+    createNew,
+    findByPhoneHash,
+    findByWalletAddress,
+    findById,
+    updateById,
+};

@@ -1,26 +1,67 @@
-import { z } from 'zod';
+// models/doctorModel.js
+import mongoose from 'mongoose';
 
-// doctor collection
-const DOCTOR_COLLECTION_NAME = 'doctors';
-// doctor schema
-const DOCTOR_COLLECTION_SCHEMA = z.object({
-    userId: z.string(),
-    fullName: z.string().min(2),
+const COLLECTION_NAME = 'doctors';
 
-    specialization: z.string(),
-    hospital: z.string().optional(),
+const doctorSchema = new mongoose.Schema(
+    {
+        userId: {
+            type: mongoose.Schema.Types.ObjectId,
+            required: true,
+            unique: true,
+            index: true,
+        },
 
-    licenseNumber: z.string().optional(),
-    phoneEncrypted: z.string().optional(),
-    email: z
-        .string()
-        .email()
-        .optional(),
-    status: z.enum(['ACTIVE', 'SUSPENDED']),
-    createdAt: z.date(),
-    updatedAt: z.date(),
-    deletedAt: z
-        .date()
-        .nullable()
-        .optional(),
-});
+        fullName: {
+            type: String,
+            required: true,
+            trim: true,
+        },
+
+        specialization: {
+            type: String,
+            required: true,
+        },
+
+        hospital: {
+            type: String,
+            default: '',
+        },
+
+        licenseNumber: {
+            type: String,
+            default: null,
+        },
+
+        phoneEncrypted: {
+            type: String,
+            default: null,
+        },
+
+        email: {
+            type: String,
+            default: null,
+        },
+
+        status: {
+            type: String,
+            enum: ['ACTIVE', 'SUSPENDED'],
+            default: 'ACTIVE',
+            index: true,
+        },
+
+        deletedAt: {
+            type: Date,
+            default: null,
+        },
+    },
+    {
+        timestamps: true,
+        versionKey: false,
+    },
+);
+
+doctorSchema.index({ specialization: 1 });
+doctorSchema.index({ status: 1 });
+
+export const DoctorModel = mongoose.model(COLLECTION_NAME, doctorSchema);
