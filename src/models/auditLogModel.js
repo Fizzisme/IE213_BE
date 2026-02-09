@@ -30,13 +30,20 @@ const auditLogSchema = new Schema(
 
         action: {
             type: String,
-            enum: ['LOGIN_PHONE', 'LOGIN_WALLET', 'CREATE_HIV_TEST', 'SUBMIT_HIV_TEST', 'ADMIN_OVERRIDE'],
+            enum: [
+                'LOGIN_PHONE',
+                'LOGIN_WALLET',
+                'CREATE_HIV_TEST',
+                'SUBMIT_HIV_TEST',
+                'ADMIN_OVERRIDE',
+                'REGISTER_PATIENT',
+            ],
             required: true,
         },
 
         entityType: {
             type: String,
-            enum: ['HIV_TEST', 'MEDICAL_RECORD', 'AUDIT_LOG'],
+            enum: ['HIV_TEST', 'MEDICAL_RECORD', 'AUDIT_LOG', 'PATIENT', 'USER'],
             default: null,
         },
         entityId: {

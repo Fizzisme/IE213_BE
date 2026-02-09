@@ -11,7 +11,16 @@ const START_SERVER = async () => {
     const app = express();
 
     //xu ly cors
-    // app.use(cors(corsOptions));
+    app.use(
+        cors({
+            origin: 'http://localhost:5173',
+            allowHeaders: ['Content-Type', 'Authorization', 'X-Custom-Header', 'Upgrade-Insecure-Requests'],
+            allowMethods: ['POST', 'GET', 'PUT', 'DELETE', 'OPTIONS'],
+            exposeHeaders: ['Content-Length', 'X-Kuma-Revision'],
+            maxAge: 600,
+            credentials: true,
+        }),
+    );
 
     //Enable req.body json data
     app.use(express.json());

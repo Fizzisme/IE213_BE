@@ -23,15 +23,12 @@ const authProviderSchema = new mongoose.Schema(
         },
         phoneHash: {
             type: String,
-            default: null,
         },
         passwordHash: {
             type: String,
-            default: null,
         },
         walletAddress: {
             type: String,
-            default: null,
         },
     },
     { _id: false },
@@ -52,7 +49,7 @@ const userSchema = new mongoose.Schema(
             default: USER_ROLES.PATIENT,
         },
 
-        cccd: {
+        nationId: {
             type: String,
             required: true,
         },
@@ -74,7 +71,7 @@ const userSchema = new mongoose.Schema(
     },
 );
 
-userSchema.index({ cccd: 1 }, { unique: true, sparse: true });
+userSchema.index({ nationId: 1 }, { unique: true, sparse: true });
 userSchema.index({ 'authProviders.phoneHash': 1 }, { unique: true, sparse: true });
 
 userSchema.index({ 'authProviders.walletAddress': 1 }, { unique: true, sparse: true });
