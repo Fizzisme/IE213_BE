@@ -1,4 +1,4 @@
-// models/userModel.js
+// models/user.model.js
 import mongoose from 'mongoose';
 
 const COLLECTION_NAME = 'users';
@@ -9,16 +9,11 @@ const USER_ROLES = {
     ADMIN: 'ADMIN',
 };
 
-const USER_STATUS = {
-    ACTIVE: 'ACTIVE',
-    BLOCKED: 'BLOCKED',
-};
-
 const authProviderSchema = new mongoose.Schema(
     {
         type: {
             type: String,
-            enum: ['PHONE', 'WALLET'],
+            enum: ['LOCAL', 'WALLET'],
             required: true,
         },
         phoneHash: {
@@ -54,15 +49,16 @@ const userSchema = new mongoose.Schema(
             required: true,
         },
 
-        status: {
-            type: String,
-            enum: Object.values(USER_STATUS),
-            default: USER_STATUS.ACTIVE,
+        isActive: {
+            type: Boolean,
+            default: false,
+            required: true,
         },
 
         _destroy: {
             type: Boolean,
             default: false,
+            required: true,
         },
     },
     {
@@ -89,6 +85,12 @@ const findByPhoneHash = async (phoneHash) => {
     }).lean();
 };
 
+const findByNationId = async (nationId) => {
+    return await UserModel.findOne({
+        nationId: nationId,
+    });
+};
+
 const findByWalletAddress = async (walletAddress) => {
     return await UserModel.findOne({
         'authProviders.walletAddress': walletAddress,
@@ -106,10 +108,10 @@ const updateById = async (userId, updateData) => {
 
 export const userModel = {
     USER_ROLES,
-    USER_STATUS,
     UserModel,
     createNew,
     findByPhoneHash,
+    findByNationId,
     findByWalletAddress,
     findById,
     updateById,

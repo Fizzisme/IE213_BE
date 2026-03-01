@@ -1,4 +1,4 @@
-// models/patientModel.js
+// models/patient.model.js
 import mongoose from 'mongoose';
 
 const COLLECTION_NAME = 'patients';
@@ -47,12 +47,11 @@ const patientSchema = new mongoose.Schema(
             default: null,
         },
 
-        status: {
-            type: String,
-            enum: Object.values(PATIENT_STATUS),
-            default: PATIENT_STATUS.ACTIVE,
+        isActive: {
+            type: Boolean,
+            default: false,
+            required: true,
         },
-
         deletedAt: {
             type: Date,
             default: null,

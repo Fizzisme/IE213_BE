@@ -1,19 +1,23 @@
 import express from 'express';
 import { env } from '~/config/environment';
-import exitHook from 'async-exit-hook';
 import { connectDB } from '~/config/mongodb';
 import { errorHandlingMiddleware } from '~/middlewares/errorHandlingMiddleware';
 import { APIs_V1 } from '~/routes/v1';
-import { corsOptions } from '~/config/cors';
 import cors from 'cors';
+import { WHITELIST_DOMAINS } from '~/utils/constants';
+import { responseInterceptor } from '~/middlewares/responseInterceptor';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from '~/config/swagger';
 
+// Hàm bắt đầu server
 const START_SERVER = async () => {
+    // Tạo ra app express
     const app = express();
 
-    //xu ly cors
+    // Xử lý cors
     app.use(
         cors({
-            origin: 'http://localhost:5173',
+            origin: WHITELIST_DOMAINS,
             allowHeaders: ['Content-Type', 'Authorization', 'X-Custom-Header', 'Upgrade-Insecure-Requests'],
             allowMethods: ['POST', 'GET', 'PUT', 'DELETE', 'OPTIONS'],
             exposeHeaders: ['Content-Length', 'X-Kuma-Revision'],
@@ -22,17 +26,23 @@ const START_SERVER = async () => {
         }),
     );
 
-    //Enable req.body json data
+    // Xử lý req.body json data
     app.use(express.json());
 
-    // Connect to MongoDB
+    // Kết nối tới MongoDB
     await connectDB();
 
-    // use APIs_V1
+    // Format lại api response
+    app.use(responseInterceptor);
+
+    // Sử dụng APIs_V1
     app.use('/v1', APIs_V1);
 
-    // middleware xu ly loi tap trung
-    // app.use(errorHandlingMiddleware);
+    // Tạo 1 swagger
+    app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+    // Middleware xử lý lỗi tập trung
+    app.use(errorHandlingMiddleware);
 
     const HOST = env.APP_HOST || 'localhost';
     const PORT = env.APP_PORT || 8017;

@@ -1,0 +1,22 @@
+import swaggerJsdoc from 'swagger-jsdoc';
+
+// Config swagger
+const options = {
+    definition: {
+        openapi: '3.0.0',
+        info: {
+            title: 'EHR API',
+            version: '1.0.0',
+            description: 'API documentation for EHR system',
+        },
+        servers: [
+            {
+                url: 'http://localhost:8017',
+                description: 'Local server',
+            },
+        ],
+    },
+    apis: ['./src/routes/**/*.js'],
+};
+
+export const swaggerSpec = swaggerJsdoc(options);
