@@ -14,40 +14,30 @@ const register = async (payload) => {
     const userExisted = await userModel.findByNationId(payload.nationId);
     // Nếu người dùng tồn tại thì ném ra lỗi
     if (userExisted) throw new ApiError(StatusCodes.NOT_ACCEPTABLE, 'Người dùng đã tồn tại');
+
     // Tạo người dùng
     const user = await userModel.createNew({
         role: payload?.role?.toUpperCase(),
         authProviders: [
-            payload.phoneNumber && {
+            payload.nationId && {
                 type: 'LOCAL',
-                phoneHash: bcrypt.hashSync(payload.phoneNumber, 8),
+                nationId: payload.nationId,
+                email: payload.email,
                 passwordHash: bcrypt.hashSync(payload.password, 8),
             },
         ].filter(Boolean),
-        nationId: payload.nationId,
-    });
-
-    // Tạo patient sau khi tạo thành công người dùng
-    const patient = await patientModel.createNew({
-        userId: user._id,
-        fullName: payload.fullName,
-        gender: payload.gender,
-        birthYear: payload.dob,
-        phoneEncrypted: bcrypt.hashSync(payload.phoneNumber, 8),
-        emailEncrypted: bcrypt.hashSync(payload.email, 8),
     });
 
     // Tạo audit log
     await auditLogModel.createLog({
         userId: user._id,
-        action: 'REGISTER_PATIENT',
-        entityType: 'PATIENT',
-        entityId: patient._id,
+        action: 'REGISTER_USER',
+        entityType: 'USER',
+        entityId: user._id,
     });
 
     return {
         userId: user._id,
-        patientId: patient._id,
     };
 };
 
@@ -123,7 +113,6 @@ const verifyWalletLogin = async (walletAddress, signature) => {
 // Hàm đăng nhập bằng cccd/cmnd
 const loginByNationId = async (data) => {
     const { nationId, password } = data;
-
     // Tìm người dùng trong DB
     const userExisted = await userModel.findByNationId(nationId);
     // Nếu người dùng không tồn tại thì ném ra lỗi
@@ -137,6 +126,13 @@ const loginByNationId = async (data) => {
     // Nếu mật khẩu không đúng ném ra lỗi
     if (!bcrypt.compareSync(password, localProvider.passwordHash))
         throw new ApiError(StatusCodes.NOT_FOUND, 'Mật khẩu người dùng không đúng');
+    // Tạo audit log
+    await auditLogModel.createLog({
+        userId: userExisted._id,
+        action: 'LOGIN_LOCAL',
+        entityType: 'USER',
+        entityId: userExisted._id,
+    });
     // Tạo ra thông tin người dùng để mã hóa vào token
     const userInfo = {
         _id: userExisted._id,
@@ -160,9 +156,36 @@ const loginByNationId = async (data) => {
     };
 };
 
+// Hàm tạo thông tin bệnh nhân
+const createPatient = async (user, payload) => {
+    // Tìm người dùng trong DB
+    const userExisted = await userModel.findById(user._id);
+    // Nếu người dùng không tồn tại thì ném ra lỗi
+    if (!userExisted) throw new ApiError(StatusCodes.NOT_FOUND, 'Người dùng chưa tồn tại');
+
+    // Tạo patient sau khi tạo người dùng có tài khoản
+    const patient = await patientModel.createNew({
+        userId: userExisted._id,
+        fullName: payload.fullName,
+        gender: payload.gender,
+        birthYear: payload.dob,
+        phoneNumber: payload.phoneNumber,
+    });
+    // Tạo audit log
+    await auditLogModel.createLog({
+        userId: userExisted._id,
+        action: 'CREATE_PATIENT',
+        entityType: 'PATIENT',
+        entityId: patient._id,
+    });
+    return {
+        patientId: patient._id,
+    };
+};
 export const authService = {
     register,
     loginByNationId,
     createWalletNonce,
     verifyWalletLogin,
+    createPatient,
 };
