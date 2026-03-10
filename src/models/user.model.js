@@ -16,7 +16,10 @@ const authProviderSchema = new mongoose.Schema(
             enum: ['LOCAL', 'WALLET'],
             required: true,
         },
-        phoneHash: {
+        nationId: {
+            type: String,
+        },
+        email: {
             type: String,
         },
         passwordHash: {
@@ -44,11 +47,6 @@ const userSchema = new mongoose.Schema(
             default: USER_ROLES.PATIENT,
         },
 
-        nationId: {
-            type: String,
-            required: true,
-        },
-
         isActive: {
             type: Boolean,
             default: false,
@@ -67,9 +65,8 @@ const userSchema = new mongoose.Schema(
     },
 );
 
-userSchema.index({ nationId: 1 }, { unique: true, sparse: true });
-userSchema.index({ 'authProviders.phoneHash': 1 }, { unique: true, sparse: true });
-
+userSchema.index({ 'authProviders.nationId': 1 }, { unique: true, sparse: true });
+userSchema.index({ 'authProviders.email': 1 }, { unique: true, sparse: true });
 userSchema.index({ 'authProviders.walletAddress': 1 }, { unique: true, sparse: true });
 
 const UserModel = mongoose.model(COLLECTION_NAME, userSchema);
@@ -87,7 +84,7 @@ const findByPhoneHash = async (phoneHash) => {
 
 const findByNationId = async (nationId) => {
     return await UserModel.findOne({
-        nationId: nationId,
+        'authProviders.nationId': nationId,
     });
 };
 
