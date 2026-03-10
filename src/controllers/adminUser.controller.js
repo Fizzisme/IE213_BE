@@ -35,9 +35,24 @@ const approveUser = async (req, res, next) => {
     }
 };
 
+// PATCH /admin/users/:id/reject
+const rejectUser = async (req, res, next) => {
+    try {
+        const result = await adminUserService.rejectUser({
+            targetUserId: req.params.id,
+            adminId: req.jwtDecoded._id,
+            reason: req.body.reason,
+        });
+        res.status(StatusCodes.OK).json(result);
+    } catch (err) {
+        next(err);
+    }
+};
+
 
 export const adminUserController = {
     getUsers,
     getUserDetail,
     approveUser,
+    rejectUser,
 };
