@@ -22,8 +22,22 @@ const getUserDetail = async (req, res, next) => {
     }
 };
 
+// PATCH /admin/users/:id/approve
+const approveUser = async (req, res, next) => {
+    try {
+        const result = await adminUserService.approveUser({
+            targetUserId: req.params.id,
+            adminId: req.jwtDecoded._id,
+        });
+        res.status(StatusCodes.OK).json(result);
+    } catch (err) {
+        next(err);
+    }
+};
+
 
 export const adminUserController = {
     getUsers,
     getUserDetail,
+    approveUser,
 };
