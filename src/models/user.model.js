@@ -133,7 +133,20 @@ const findById = async (userId) => {
 const updateById = async (userId, updateData) => {
     return await UserModel.findByIdAndUpdate(userId, updateData, { new: true, runValidators: true });
 };
-
+// Lấy danh sách user theo status, có phân trang
+const findByStatus = async ({ status, page, limit }) => {
+    const skip = (page - 1) * limit;
+    const [data, total] = await Promise.all([
+        UserModel.find({ status, _destroy: false })
+            .select('-__v')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean(),
+        UserModel.countDocuments({ status, _destroy: false }),
+    ]);
+    return { data, total, page, limit };
+};
 
 
 export const userModel = {
@@ -146,4 +159,5 @@ export const userModel = {
     findByWalletAddress,
     findById,
     updateById,
+    findByStatus
 };
