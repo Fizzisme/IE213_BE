@@ -7,6 +7,9 @@ import { adminUserController } from '~/controllers/adminUser.controller';
 
 const Router = express.Router();
 
+// Tất cả route /admin/* đều phải qua verifyToken + requireAdmin
+Router.use(verifyToken, authorizeRoles('ADMIN'));
+
 /**
  * @swagger
  * /v1/admin/users:
