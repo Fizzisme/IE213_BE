@@ -137,6 +137,25 @@ const loginByNationId = async (data) => {
     // Nếu mật khẩu không đúng ném ra lỗi
     if (!bcrypt.compareSync(password, localProvider.passwordHash))
         throw new ApiError(StatusCodes.NOT_FOUND, 'Mật khẩu người dùng không đúng');
+
+       // ===== THÊM: Kiểm tra trạng thái tài khoản trước khi cấp token =====
+    switch (userExisted.status) {
+        case 'PENDING':
+            throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản đang chờ admin duyệt');
+        case 'REJECTED':
+            throw new ApiError(
+                StatusCodes.FORBIDDEN,
+                `Tài khoản đã bị từ chối. Lý do: ${userExisted.rejectionReason || 'Không rõ'}`,
+            );
+        case 'INACTIVE':
+            throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản đã bị vô hiệu hóa');
+        case 'ACTIVE':
+            // Cho phép đăng nhập bình thường
+            break;
+        default:
+            throw new ApiError(StatusCodes.FORBIDDEN, 'Trạng thái tài khoản không hợp lệ');
+    }
+
     // Tạo ra thông tin người dùng để mã hóa vào token
     const userInfo = {
         _id: userExisted._id,
