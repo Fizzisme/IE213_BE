@@ -79,10 +79,40 @@ const rejectUser = async ({ targetUserId, adminId, reason }) => {
     return { message: 'User rejected', user: updatedUser };
 };
 
+// Phục hồi user REJECTED → PENDING (cho phép xét duyệt lại)
+const reReviewUser = async ({ targetUserId, adminId }) => {
+    const user = await userModel.findById(targetUserId);
+    if (!user) throw new ApiError(StatusCodes.NOT_FOUND, 'User không tồn tại');
+
+    if (user.status !== userModel.USER_STATUS.REJECTED) {
+        throw new ApiError(
+            StatusCodes.CONFLICT,
+            `Chỉ có thể phục hồi user ở trạng thái REJECTED, hiện tại: ${user.status}`,
+        );
+    }
+
+    const updatedUser = await userModel.updateById(targetUserId, {
+        status: userModel.USER_STATUS.PENDING,
+        rejectionReason: null,
+        approvedAt: null,
+        approvedBy: null,
+    });
+
+    await auditLogModel.createLog({
+        userId: adminId,
+        action: 'ADMIN_OVERRIDE',
+        entityType: 'USER',
+        entityId: targetUserId,
+        details: { note: `Admin re-reviewed user ${targetUserId} (REJECTED → PENDING)` },
+    });
+
+    return { message: 'User đã được chuyển về trạng thái chờ duyệt', user: updatedUser };
+};
 
 export const adminUserService = {
     getUsers,
     getUserDetail,
     approveUser,
     rejectUser,
+    reReviewUser,
 };

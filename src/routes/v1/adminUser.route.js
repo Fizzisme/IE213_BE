@@ -99,4 +99,22 @@ Router.patch('/users/:id/approve', adminUserController.approveUser);
  */
 Router.patch('/users/:id/reject', adminUserValidation.rejectUser, adminUserController.rejectUser);
 
+/**
+ * @swagger
+ * /v1/admin/users/{id}/re-review:
+ *   patch:
+ *     summary: Phục hồi user REJECTED → PENDING (xét duyệt lại)
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: User chuyển về PENDING
+ */
+Router.patch('/users/:id/re-review', adminUserController.reReviewUser);
+
 export const adminUserRoute = Router;
