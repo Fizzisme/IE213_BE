@@ -11,6 +11,19 @@ const getUsers = async (req, res, next) => {
         next(err);
     }
 };
+
+// GET /admin/users/:id
+const getUserDetail = async (req, res, next) => {
+    try {
+        const user = await adminUserService.getUserDetail(req.params.id);
+        res.status(StatusCodes.OK).json(user);
+    } catch (err) {
+        next(err);
+    }
+};
+
+
 export const adminUserController = {
     getUsers,
+    getUserDetail,
 };
