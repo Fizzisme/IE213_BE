@@ -148,6 +148,14 @@ const findByStatus = async ({ status, page, limit }) => {
     return { data, total, page, limit };
 };
 
+// Lấy detail kèm thông tin admin duyệt (populate approvedBy)
+const findDetailById = async (userId) => {
+    return await UserModel.findOne({ _id: userId, _destroy: false })
+        .populate('approvedBy', '_id role nationId')
+        .lean();
+};
+
+
 
 export const userModel = {
     USER_ROLES,
@@ -159,5 +167,6 @@ export const userModel = {
     findByWalletAddress,
     findById,
     updateById,
-    findByStatus
+    findByStatus,
+    findDetailById,
 };

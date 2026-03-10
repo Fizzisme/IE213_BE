@@ -48,6 +48,8 @@ const register = async (payload) => {
     return {
         userId: user._id,
         patientId: patient._id,
+        status: user.status,
+        message: 'Đăng ký thành công. Tài khoản đang chờ admin duyệt.',
     };
 };
 

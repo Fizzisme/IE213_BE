@@ -23,6 +23,8 @@ export const verifyToken = async (req, res, next) => {
         );
 
         req.jwtDecoded = decoded;
+        // Gán req.user để các middleware khác (authorizeRoles) sử dụng được
+        req.user = decoded;
 
         next();
     } catch (err) {
