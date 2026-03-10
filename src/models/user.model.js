@@ -9,6 +9,13 @@ const USER_ROLES = {
     ADMIN: 'ADMIN',
 };
 
+const USER_STATUS = {
+  PENDING: 'PENDING',
+  ACTIVE: 'ACTIVE',
+  REJECTED: 'REJECTED',
+  INACTIVE: 'INACTIVE'
+}
+
 const authProviderSchema = new mongoose.Schema(
     {
         type: {
@@ -60,6 +67,27 @@ const userSchema = new mongoose.Schema(
             default: false,
             required: true,
         },
+
+         // ===== Thêm các trường admin approval field vào trong nx  =====
+        status: {
+            type: String,
+            enum: Object.values(USER_STATUS),
+            default: USER_STATUS.PENDING,
+            index: true,
+        },
+        approvedAt: {
+            type: Date,
+            default: null,
+        },
+        approvedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: COLLECTION_NAME,
+            default: null,
+        },
+        rejectionReason: {
+            type: String,
+            default: null,
+        },
     },
     {
         timestamps: true,
@@ -106,8 +134,11 @@ const updateById = async (userId, updateData) => {
     return await UserModel.findByIdAndUpdate(userId, updateData, { new: true, runValidators: true });
 };
 
+
+
 export const userModel = {
     USER_ROLES,
+    USER_STATUS,
     UserModel,
     createNew,
     findByPhoneHash,
