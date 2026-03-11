@@ -30,6 +30,11 @@ Router.use(verifyToken, authorizeRoles('ADMIN'));
  *         name: limit
  *         schema:
  *           type: integer
+ *       - in: query
+ *         name: deleted
+ *         schema:
+ *           type: boolean
+ *         description: Nếu true, lấy danh sách user đã bị soft delete
  *     responses:
  *       200:
  *         description: Danh sách user phân trang

@@ -154,6 +154,21 @@ const findDetailById = async (userId) => {
         .populate('approvedBy', '_id role nationId')
         .lean();
 };
+// Lấy danh sách user đã bị soft delete
+const findDeleted = async ({ page, limit }) => {
+    const skip = (page - 1) * limit;
+    const [data, total] = await Promise.all([
+        UserModel.find({ _destroy: true })
+            .select('-__v')
+            .sort({ updatedAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean(),
+        UserModel.countDocuments({ _destroy: true }),
+    ]);
+    return { data, total, page, limit };
+};
+
 // Soft delete user đánh dấu là user bị xóa chứ chưa xóa ra khỏi db
 const softDelete = async (userId) => {
     return await UserModel.findByIdAndUpdate(
@@ -181,6 +196,7 @@ export const userModel = {
     updateById,
     findByStatus,
     findDetailById,
+    findDeleted,
     softDelete,
-    
+
 };
