@@ -4,8 +4,11 @@ import { StatusCodes } from 'http-status-codes';
 import { patientModel } from '~/models/patient.model';
 import { doctorModel } from '~/models/doctorModel';
 import ApiError from '~/utils/ApiError';
-
-const getUsers = async ({ status, page, limit }) => {
+// lấy ra toàn bộ user tồn tại 
+const getUsers = async ({ status, page, limit, deleted }) => {
+    if (deleted) {
+        return await userModel.findDeleted({ page, limit });
+    }
     return await userModel.findByStatus({ status, page, limit });
 };
 
