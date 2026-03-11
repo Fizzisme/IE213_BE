@@ -16,20 +16,27 @@ Router.use(verifyToken, authorizeRoles('ADMIN'));
  *   get:
  *     summary: Lấy danh sách user theo trạng thái (mặc định PENDING)
  *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: query
  *         name: status
  *         schema:
  *           type: string
  *           enum: [PENDING, ACTIVE, REJECTED, INACTIVE]
+ *         description: Lọc theo trạng thái (mặc định PENDING)
  *       - in: query
  *         name: page
  *         schema:
  *           type: integer
+ *           default: 1
+ *         description: Số trang
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
+ *           default: 10
+ *         description: Số lượng user mỗi trang
  *       - in: query
  *         name: deleted
  *         schema:
@@ -38,6 +45,25 @@ Router.use(verifyToken, authorizeRoles('ADMIN'));
  *     responses:
  *       200:
  *         description: Danh sách user phân trang
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 total:
+ *                   type: integer
+ *                 page:
+ *                   type: integer
+ *                 limit:
+ *                   type: integer
+ *       401:
+ *         description: Unauthorized - Token không hợp lệ hoặc hết hạn
+ *       403:
+ *         description: Forbidden - Không phải ADMIN
  */
 Router.get('/users', adminUserValidation.listUsers, adminUserController.getUsers);
 
@@ -47,15 +73,24 @@ Router.get('/users', adminUserValidation.listUsers, adminUserController.getUsers
  *   get:
  *     summary: Xem chi tiết 1 user
  *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
  *         schema:
  *           type: string
+ *         description: ID của user cần xem
  *     responses:
  *       200:
  *         description: Chi tiết user
+ *       401:
+ *         description: Unauthorized - Token không hợp lệ hoặc hết hạn
+ *       403:
+ *         description: Forbidden - Không phải ADMIN
+ *       404:
+ *         description: User không tồn tại
  */
 Router.get('/users/:id', adminUserController.getUserDetail);
 
@@ -65,15 +100,26 @@ Router.get('/users/:id', adminUserController.getUserDetail);
  *   patch:
  *     summary: Duyệt user → ACTIVE
  *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
  *         schema:
  *           type: string
+ *         description: ID của user cần duyệt
  *     responses:
  *       200:
  *         description: User approved successfully
+ *       401:
+ *         description: Unauthorized - Token không hợp lệ hoặc hết hạn
+ *       403:
+ *         description: Forbidden - Không phải ADMIN
+ *       404:
+ *         description: User không tồn tại
+ *       409:
+ *         description: Conflict - User không ở trạng thái PENDING
  */
 Router.patch('/users/:id/approve', adminUserController.approveUser);
 
@@ -83,24 +129,41 @@ Router.patch('/users/:id/approve', adminUserController.approveUser);
  *   patch:
  *     summary: Từ chối user → REJECTED
  *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
  *         schema:
  *           type: string
+ *         description: ID của user cần từ chối
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - reason
  *             properties:
  *               reason:
  *                 type: string
+ *                 example: "Thông tin không hợp lệ"
+ *                 description: Lý do từ chối (tối thiểu 3 ký tự)
  *     responses:
  *       200:
  *         description: User rejected
+ *       401:
+ *         description: Unauthorized - Token không hợp lệ hoặc hết hạn
+ *       403:
+ *         description: Forbidden - Không phải ADMIN
+ *       404:
+ *         description: User không tồn tại
+ *       409:
+ *         description: Conflict - User không ở trạng thái PENDING
+ *       422:
+ *         description: Validation error - Lý do không hợp lệ
  */
 Router.patch('/users/:id/reject', adminUserValidation.rejectUser, adminUserController.rejectUser);
 
@@ -110,34 +173,55 @@ Router.patch('/users/:id/reject', adminUserValidation.rejectUser, adminUserContr
  *   patch:
  *     summary: Phục hồi user REJECTED → PENDING (xét duyệt lại)
  *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
  *         schema:
  *           type: string
+ *         description: ID của user cần phục hồi
  *     responses:
  *       200:
  *         description: User chuyển về PENDING
+ *       401:
+ *         description: Unauthorized - Token không hợp lệ hoặc hết hạn
+ *       403:
+ *         description: Forbidden - Không phải ADMIN
+ *       404:
+ *         description: User không tồn tại
+ *       409:
+ *         description: Conflict - User không ở trạng thái REJECTED
  */
 Router.patch('/users/:id/re-review', adminUserController.reReviewUser);
 
-// Route api softdelete cho admin 
 /**
  * @swagger
  * /v1/admin/users/{id}/soft-delete:
  *   delete:
  *     summary: Soft delete user + cascade xóa theo role
  *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
  *         schema:
  *           type: string
+ *         description: ID của user cần xóa mềm
  *     responses:
  *       200:
  *         description: User đã bị soft delete
+ *       401:
+ *         description: Unauthorized - Token không hợp lệ hoặc hết hạn
+ *       403:
+ *         description: Forbidden - Không phải ADMIN
+ *       404:
+ *         description: User không tồn tại
+ *       409:
+ *         description: Conflict - User đã bị xóa trước đó
  */
 Router.delete('/users/:id/soft-delete', adminUserController.softDeleteUser);
 
