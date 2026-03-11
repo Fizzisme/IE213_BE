@@ -64,4 +64,17 @@ const doctorSchema = new mongoose.Schema(
 doctorSchema.index({ specialization: 1 });
 doctorSchema.index({ status: 1 });
 
-export const DoctorModel = mongoose.model(COLLECTION_NAME, doctorSchema);
+const DoctorModel = mongoose.model(COLLECTION_NAME, doctorSchema);
+// softDeleteByUserId dùng để soft delete cho doctor 
+const softDeleteByUserId = async (userId) => {
+    return await DoctorModel.findOneAndUpdate(
+        { userId, deletedAt: null },
+        { deletedAt: new Date(), status: 'SUSPENDED' },
+        { new: true },
+    );
+};
+
+export const doctorModel = {
+    DoctorModel,
+    softDeleteByUserId,
+};
