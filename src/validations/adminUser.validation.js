@@ -7,6 +7,7 @@ const listUsersSchema = z.object({
     status: z.enum(['PENDING', 'ACTIVE', 'REJECTED', 'INACTIVE']).optional().default('PENDING'),
     page: z.number().int().min(1).optional().default(1),
     limit: z.number().int().min(1).max(100).optional().default(10),
+    deleted: z.boolean().optional(),
 });
 
 // Schema validate body khi từ chối user
