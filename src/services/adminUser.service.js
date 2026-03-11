@@ -1,6 +1,8 @@
 import { userModel } from '~/models/user.model';
 import { auditLogModel } from '~/models/auditLog.model';
 import { StatusCodes } from 'http-status-codes';
+import { patientModel } from '~/models/patient.model';
+import { doctorModel } from '~/models/doctorModel';
 import ApiError from '~/utils/ApiError';
 
 const getUsers = async ({ status, page, limit }) => {
@@ -109,10 +111,41 @@ const reReviewUser = async ({ targetUserId, adminId }) => {
     return { message: 'User đã được chuyển về trạng thái chờ duyệt', user: updatedUser };
 };
 
+// Thêm hàm softDeleteUser để admin có thể softdelete 1 user trong hệ thống
+const softDeleteUser = async ({ targetUserId, adminId }) => {
+    const user = await userModel.findById(targetUserId);
+    if (!user) throw new ApiError(StatusCodes.NOT_FOUND, 'User không tồn tại');
+    if (user._destroy) throw new ApiError(StatusCodes.CONFLICT, 'User đã bị xóa trước đó');
+
+    await userModel.softDelete(targetUserId);
+
+    switch (user.role) {
+        case userModel.USER_ROLES.PATIENT: {
+            await patientModel.softDeleteByUserId(targetUserId);
+            break;
+        }
+        case userModel.USER_ROLES.DOCTOR: {
+            await doctorModel.softDeleteByUserId(targetUserId);
+            break;
+        }
+    }
+
+    await auditLogModel.createLog({
+        userId: adminId,
+        action: 'ADMIN_OVERRIDE',
+        entityType: 'USER',
+        entityId: targetUserId,
+        details: { note: `Admin soft-deleted user ${targetUserId} (role: ${user.role})` },
+    });
+
+    return { message: `User ${targetUserId} đã bị xóa`, role: user.role };
+};
+
 export const adminUserService = {
     getUsers,
     getUserDetail,
     approveUser,
     rejectUser,
     reReviewUser,
+    softDeleteUser,
 };
