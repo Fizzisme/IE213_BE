@@ -144,6 +144,20 @@ const softDeleteUser = async ({ targetUserId, adminId }) => {
     return { message: `User ${targetUserId} đã bị xóa`, role: user.role };
 };
 
+const findDeleted = async ({ page, limit }) => {
+    const skip = (page - 1) * limit;
+    const [data, total] = await Promise.all([
+        UserModel.find({ _destroy: true })
+            .select('-__v')
+            .sort({ updatedAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean(),
+        UserModel.countDocuments({ _destroy: true }),
+    ]);
+    return { data, total, page, limit };
+};
+
 export const adminUserService = {
     getUsers,
     getUserDetail,
@@ -151,4 +165,5 @@ export const adminUserService = {
     rejectUser,
     reReviewUser,
     softDeleteUser,
+    findDeleted,
 };
