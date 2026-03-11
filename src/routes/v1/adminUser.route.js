@@ -117,4 +117,23 @@ Router.patch('/users/:id/reject', adminUserValidation.rejectUser, adminUserContr
  */
 Router.patch('/users/:id/re-review', adminUserController.reReviewUser);
 
+// Route api softdelete cho admin 
+/**
+ * @swagger
+ * /v1/admin/users/{id}/soft-delete:
+ *   delete:
+ *     summary: Soft delete user + cascade xóa theo role
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: User đã bị soft delete
+ */
+Router.delete('/users/:id/soft-delete', adminUserController.softDeleteUser);
+
 export const adminUserRoute = Router;
