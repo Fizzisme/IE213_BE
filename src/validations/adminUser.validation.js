@@ -20,6 +20,8 @@ const listUsers = (req, res, next) => {
     // Query params là string, chuyển sang number trước khi validate
     if (req.query.page) req.query.page = Number(req.query.page);
     if (req.query.limit) req.query.limit = Number(req.query.limit);
+    // Convert string sang boolean:
+    if (req.query.deleted) req.query.deleted = req.query.deleted === 'true';
     const result = listUsersSchema.safeParse(req.query);
     if (!result.success) {
         const errors = result.error.issues.map((issue) => ({
