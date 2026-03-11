@@ -154,6 +154,18 @@ const findDetailById = async (userId) => {
         .populate('approvedBy', '_id role nationId')
         .lean();
 };
+// Soft delete user đánh dấu là user bị xóa chứ chưa xóa ra khỏi db
+const softDelete = async (userId) => {
+    return await UserModel.findByIdAndUpdate(
+        userId,
+        {
+            _destroy: true,
+            status: USER_STATUS.INACTIVE,
+            isActive: false,
+        },
+        { new: true },
+    );
+};
 
 
 
@@ -169,4 +181,6 @@ export const userModel = {
     updateById,
     findByStatus,
     findDetailById,
+    softDelete,
+    
 };
