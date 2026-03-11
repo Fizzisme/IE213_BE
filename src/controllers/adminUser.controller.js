@@ -61,11 +61,23 @@ const reReviewUser = async (req, res, next) => {
         next(err);
     }
 };
-
+// Thêm hàm softDelete để đánh dấu user bị soft delete
+const softDeleteUser = async (req, res, next) => {
+    try {
+        const result = await adminUserService.deleteUser({
+            targetUserId: req.params.id,
+            adminId: req.jwtDecoded._id,
+        });
+        res.status(StatusCodes.OK).json(result);
+    } catch (err) {
+        next(err);
+    }
+};
 export const adminUserController = {
     getUsers,
     getUserDetail,
     approveUser,
     rejectUser,
     reReviewUser,
+    softDeleteUser
 };
