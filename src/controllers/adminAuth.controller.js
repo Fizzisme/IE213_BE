@@ -28,6 +28,6 @@ const login = async (req, res, next) => {
 };
 
 
-export const adminAuthService = {
+export const adminAuthController = {
     login,
 };
