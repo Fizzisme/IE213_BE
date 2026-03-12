@@ -16,7 +16,7 @@ const register = async (payload) => {
     if (userExisted) throw new ApiError(StatusCodes.NOT_ACCEPTABLE, 'Người dùng đã tồn tại');
     // Tạo người dùng
     const user = await userModel.createNew({
-        role: payload?.role?.toUpperCase(),
+        role: userModel.USER_ROLES.PATIENT,
         authProviders: [
             payload.phoneNumber && {
                 type: 'LOCAL',
