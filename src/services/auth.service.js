@@ -16,6 +16,7 @@ const register = async (payload) => {
     if (userExisted) throw new ApiError(StatusCodes.NOT_ACCEPTABLE, 'Người dùng đã tồn tại');
     // Tạo người dùng
     const user = await userModel.createNew({
+        // KHi user đăng kí tài khoản mặc định role là PATIENT
         role: userModel.USER_ROLES.PATIENT,
         authProviders: [
             payload.phoneNumber && {
@@ -128,19 +129,26 @@ const loginByNationId = async (data) => {
 
     // Tìm người dùng trong DB
     const userExisted = await userModel.findByNationId(nationId);
-    // Nếu người dùng không tồn tại thì ném ra lỗi
-    if (!userExisted) throw new ApiError(StatusCodes.NOT_FOUND, 'Người dùng không tồn tại');
+    // Generic message để tránh lộ thông tin account
+    if (!userExisted) throw new ApiError(StatusCodes.UNAUTHORIZED, 'Thông tin đăng nhập không hợp lệ');
+
+    // Tài khoản ADMIN phải đi qua route login admin riêng
+    if (userExisted.role === userModel.USER_ROLES.ADMIN) {
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản ADMIN vui lòng đăng nhập tại /v1/admin/auth/login');
+    }
+
+    if (userExisted._destroy) {
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản đã bị vô hiệu hóa');
+    }
+
     // Tìm phương thức đăng nhập local
     const localProvider = userExisted?.authProviders.find((p) => p.type === 'LOCAL');
-    // Nếu người dùng chưa đăng ký tài khoản bằng local thì ném ra lỗi
-    if (!localProvider) {
-        throw new ApiError(StatusCodes.NOT_FOUND, 'Người dùng chưa đăng ký tài khoản bằng local');
+    if (!localProvider) throw new ApiError(StatusCodes.UNAUTHORIZED, 'Thông tin đăng nhập không hợp lệ');
+    if (!bcrypt.compareSync(password, localProvider.passwordHash)) {
+        throw new ApiError(StatusCodes.UNAUTHORIZED, 'Thông tin đăng nhập không hợp lệ');
     }
-    // Nếu mật khẩu không đúng ném ra lỗi
-    if (!bcrypt.compareSync(password, localProvider.passwordHash))
-        throw new ApiError(StatusCodes.NOT_FOUND, 'Mật khẩu người dùng không đúng');
 
-       // ===== THÊM: Kiểm tra trạng thái tài khoản trước khi cấp token =====
+    // Kiểm tra trạng thái tài khoản trước khi cấp token
     switch (userExisted.status) {
         case 'PENDING':
             throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản đang chờ admin duyệt');

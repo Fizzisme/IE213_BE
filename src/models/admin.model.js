@@ -56,9 +56,8 @@ const adminSchema = new Schema(
 adminSchema.index({ email: 1 });
 adminSchema.index({ status: 1 });
 
-adminSchema.pre('save', function(next) {
+adminSchema.pre('save', function() {
     this.updatedAt = new Date();
-    next();
 });
 
 const AdminModel = mongoose.model(COLLECTION_NAME, adminSchema);

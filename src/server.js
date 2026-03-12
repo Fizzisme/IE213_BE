@@ -1,4 +1,5 @@
 import express from 'express';
+import cookieParser from 'cookie-parser';
 import { env } from '~/config/environment';
 import { connectDB } from '~/config/mongodb';
 import { errorHandlingMiddleware } from '~/middlewares/errorHandlingMiddleware';
@@ -28,6 +29,7 @@ const START_SERVER = async () => {
 
     // Xử lý req.body json data
     app.use(express.json());
+    app.use(cookieParser());
 
     // Kết nối tới MongoDB
     await connectDB();
