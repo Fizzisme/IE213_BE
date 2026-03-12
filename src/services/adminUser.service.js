@@ -144,6 +144,7 @@ const softDeleteUser = async ({ targetUserId, adminId }) => {
     return { message: `User ${targetUserId} đã bị xóa`, role: user.role };
 };
 
+
 export const adminUserService = {
     getUsers,
     getUserDetail,
