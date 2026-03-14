@@ -95,6 +95,15 @@ const softDelete = async (patientId) => {
     );
 };
 
+// Thêm trước dòng export
+const softDeleteByUserId = async (userId) => {
+    return await PatientModel.findOneAndUpdate(
+        { userId, deletedAt: null },
+        { deletedAt: new Date(), isActive: false },
+        { new: true },
+    );
+};
+
 export const patientModel = {
     PATIENT_STATUS,
     PatientModel,
@@ -103,5 +112,6 @@ export const patientModel = {
     findById,
     updateById,
     softDelete,
+    softDeleteByUserId,
     findByNationId,
 };

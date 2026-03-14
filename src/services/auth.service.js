@@ -17,7 +17,8 @@ const register = async (payload) => {
 
     // Tạo người dùng
     const user = await userModel.createNew({
-        role: payload?.role?.toUpperCase(),
+        // KHi user đăng kí tài khoản mặc định role là PATIENT
+        role: userModel.USER_ROLES.PATIENT,
         authProviders: [
             payload.nationId && {
                 type: 'LOCAL',
@@ -115,24 +116,43 @@ const loginByNationId = async (data) => {
     const { nationId, password } = data;
     // Tìm người dùng trong DB
     const userExisted = await userModel.findByNationId(nationId);
-    // Nếu người dùng không tồn tại thì ném ra lỗi
-    if (!userExisted) throw new ApiError(StatusCodes.NOT_FOUND, 'Người dùng không tồn tại');
+    // Generic message để tránh lộ thông tin account
+    if (!userExisted) throw new ApiError(StatusCodes.UNAUTHORIZED, 'Thông tin đăng nhập không hợp lệ');
+
+    // Tài khoản ADMIN phải đi qua route login admin riêng
+    if (userExisted.role === userModel.USER_ROLES.ADMIN) {
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản ADMIN vui lòng đăng nhập tại /v1/admin/auth/login');
+    }
+
+    if (userExisted._destroy) {
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản đã bị vô hiệu hóa');
+    }
+
     // Tìm phương thức đăng nhập local
     const localProvider = userExisted?.authProviders.find((p) => p.type === 'LOCAL');
-    // Nếu người dùng chưa đăng ký tài khoản bằng local thì ném ra lỗi
-    if (!localProvider) {
-        throw new ApiError(StatusCodes.NOT_FOUND, 'Người dùng chưa đăng ký tài khoản bằng local');
+    if (!localProvider) throw new ApiError(StatusCodes.UNAUTHORIZED, 'Thông tin đăng nhập không hợp lệ');
+    if (!bcrypt.compareSync(password, localProvider.passwordHash)) {
+        throw new ApiError(StatusCodes.UNAUTHORIZED, 'Thông tin đăng nhập không hợp lệ');
     }
-    // Nếu mật khẩu không đúng ném ra lỗi
-    if (!bcrypt.compareSync(password, localProvider.passwordHash))
-        throw new ApiError(StatusCodes.NOT_FOUND, 'Mật khẩu người dùng không đúng');
-    // Tạo audit log
-    await auditLogModel.createLog({
-        userId: userExisted._id,
-        action: 'LOGIN_LOCAL',
-        entityType: 'USER',
-        entityId: userExisted._id,
-    });
+
+    // Kiểm tra trạng thái tài khoản trước khi cấp token
+    switch (userExisted.status) {
+        case 'PENDING':
+            throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản đang chờ admin duyệt');
+        case 'REJECTED':
+            throw new ApiError(
+                StatusCodes.FORBIDDEN,
+                `Tài khoản đã bị từ chối. Lý do: ${userExisted.rejectionReason || 'Không rõ'}`,
+            );
+        case 'INACTIVE':
+            throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản đã bị vô hiệu hóa');
+        case 'ACTIVE':
+            // Cho phép đăng nhập bình thường
+            break;
+        default:
+            throw new ApiError(StatusCodes.FORBIDDEN, 'Trạng thái tài khoản không hợp lệ');
+    }
+
     // Tạo ra thông tin người dùng để mã hóa vào token
     const userInfo = {
         _id: userExisted._id,
