@@ -1,6 +1,7 @@
 import express from 'express';
 import { authController } from '~/controllers/auth.controller';
 import { authValidation } from '~/validations/auth.validation';
+import { authMiddleware } from '~/middlewares/authMiddleware';
 
 const Router = express.Router();
 
@@ -21,11 +22,34 @@ const Router = express.Router();
  *                 type: string
  *               password:
  *                 type: string
+ *               nationId:
+ *                  type: string
+ *     responses:
+ *       204:
+ *         description: Success
+ */
+Router.post('/register', authValidation.register, authController.register);
+
+/**
+ * @swagger
+ * /v1/auth/create_patient:
+ *   post:
+ *     summary: create new patient
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
  *               fullName:
  *                 type: string
+ *               gender:
+ *                 type: Enum['M','F']
+ *               dob:
+ *                  type: number
  *               phoneNumber:
- *                 type: string
- *               nationId:
  *                  type: string
  *     responses:
  *       204:
