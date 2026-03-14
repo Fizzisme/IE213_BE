@@ -25,7 +25,11 @@ const options = {
             },
         },
     },
-    apis: ['./src/routes/**/*.js'],
+    apis: [
+        './src/routes/v1/auth.route.js',
+        './src/routes/v1/admin.route.js',
+        './src/routes/v1/adminAuth.route.js',
+    ],
 };
 
 export const swaggerSpec = swaggerJsdoc(options);
