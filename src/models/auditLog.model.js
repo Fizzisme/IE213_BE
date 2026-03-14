@@ -8,7 +8,6 @@ const detailSchema = new Schema(
     {
         ip: { type: String, default: null },
         device: { type: String, default: null },
-        recordId: { type: Schema.Types.ObjectId, default: null },
         note: { type: String, default: null },
     },
     { _id: false },
@@ -30,24 +29,26 @@ const auditLogSchema = new Schema(
 
         action: {
             type: String,
-            enum: [
-                'LOGIN_PHONE',
-                'LOGIN_WALLET',
-                'CREATE_HIV_TEST',
-                'SUBMIT_HIV_TEST',
-                'ADMIN_OVERRIDE',
-                'REGISTER_PATIENT',
-            ],
+            enum: ['LOGIN_LOCAL', 'LOGIN_WALLET', 'ADMIN_OVERRIDE', 'REGISTER_USER', 'CREATE_PATIENT'],
             required: true,
         },
 
         entityType: {
             type: String,
-            enum: ['HIV_TEST', 'MEDICAL_RECORD', 'AUDIT_LOG', 'PATIENT', 'USER'],
+            enum: ['MEDICAL_RECORD', 'AUDIT_LOG', 'PATIENT', 'USER'],
             default: null,
         },
         entityId: {
             type: Schema.Types.ObjectId,
+            default: null,
+        },
+
+        oldData: {
+            type: Schema.Types.Mixed,
+            default: null,
+        },
+        newData: {
+            type: Schema.Types.Mixed,
             default: null,
         },
 

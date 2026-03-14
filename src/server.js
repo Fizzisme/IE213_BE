@@ -1,4 +1,5 @@
 import express from 'express';
+import cookieParser from 'cookie-parser';
 import { env } from '~/config/environment';
 import { connectDB } from '~/config/mongodb';
 import { errorHandlingMiddleware } from '~/middlewares/errorHandlingMiddleware';
@@ -8,6 +9,7 @@ import { WHITELIST_DOMAINS } from '~/utils/constants';
 import { responseInterceptor } from '~/middlewares/responseInterceptor';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from '~/config/swagger';
+import cookieParser from 'cookie-parser';
 
 // Hàm bắt đầu server
 const START_SERVER = async () => {
@@ -28,12 +30,16 @@ const START_SERVER = async () => {
 
     // Xử lý req.body json data
     app.use(express.json());
+    app.use(cookieParser());
 
     // Kết nối tới MongoDB
     await connectDB();
 
     // Format lại api response
     app.use(responseInterceptor);
+
+    // Sử dụng để lấy biến được lưu trong cookie
+    app.use(cookieParser());
 
     // Sử dụng APIs_V1
     app.use('/v1', APIs_V1);
