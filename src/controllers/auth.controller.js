@@ -61,19 +61,9 @@ const loginByWallet = async (req, res, next) => {
         next(err);
     }
 };
-// Controller tạo thông tin bệnh nhân
-const createPatient = async (req, res, next) => {
-    try {
-        const result = await authService.createPatient(req.user, req.body);
-        res.status(StatusCodes.CREATED).json(result);
-    } catch (err) {
-        next(err);
-    }
-};
 
 export const authController = {
     register,
     loginByWallet,
     loginByNationId,
-    createPatient,
 };
