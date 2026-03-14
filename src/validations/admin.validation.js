@@ -1,18 +1,35 @@
-// src/validations/adminUser.validation.js
+// src/validations/admin.validation.js
 import { z } from 'zod';
 import { zodValidate } from '~/utils/zodValidate';
 
 // Schema validate query params cho danh sách user
 const listUsersSchema = z.object({
-    status: z.enum(['PENDING', 'ACTIVE', 'REJECTED', 'INACTIVE']).optional().default('PENDING'),
-    page: z.number().int().min(1).optional().default(1),
-    limit: z.number().int().min(1).max(100).optional().default(10),
+    status: z
+        .enum(['PENDING', 'ACTIVE', 'REJECTED', 'INACTIVE'])
+        .optional()
+        .default('PENDING'),
+    page: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .default(1),
+    limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .optional()
+        .default(10),
     deleted: z.boolean().optional(),
 });
 
 // Schema validate body khi từ chối user
 const rejectUserSchema = z.object({
-    reason: z.string().min(3, 'Lý do từ chối phải có ít nhất 3 ký tự').max(1000),
+    reason: z
+        .string()
+        .min(3, 'Lý do từ chối phải có ít nhất 3 ký tự')
+        .max(1000),
 });
 
 // Validate query cho GET /admin/users
@@ -41,7 +58,7 @@ const listUsers = (req, res, next) => {
 // Validate body cho PATCH /admin/users/:id/reject
 const rejectUser = zodValidate(rejectUserSchema);
 
-export const adminUserValidation = {
+export const adminValidation = {
     listUsers,
     rejectUser,
 };

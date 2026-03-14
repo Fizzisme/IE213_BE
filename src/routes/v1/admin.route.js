@@ -1,9 +1,9 @@
-// src/routes/v1/adminUser.route.js
+// src/routes/v1/admin.route.js
 import express from 'express';
 import { verifyToken } from '~/middlewares/verifyToken';
 import { authorizeRoles } from '~/middlewares/authorizeRoles';
-import { adminUserValidation } from '~/validations/adminUser.validation';
-import { adminUserController } from '~/controllers/adminUser.controller';
+import { adminValidation } from '~/validations/admin.validation';
+import { adminController } from '~/controllers/admin.controller';
 
 const Router = express.Router();
 
@@ -65,7 +65,7 @@ Router.use(verifyToken, authorizeRoles('ADMIN'));
  *       403:
  *         description: Forbidden - Không phải ADMIN
  */
-Router.get('/users', adminUserValidation.listUsers, adminUserController.getUsers);
+Router.get('/users', adminValidation.listUsers, adminController.getUsers);
 
 /**
  * @swagger
@@ -92,7 +92,7 @@ Router.get('/users', adminUserValidation.listUsers, adminUserController.getUsers
  *       404:
  *         description: User không tồn tại
  */
-Router.get('/users/:id', adminUserController.getUserDetail);
+Router.get('/users/:id', adminController.getUserDetail);
 
 /**
  * @swagger
@@ -121,7 +121,7 @@ Router.get('/users/:id', adminUserController.getUserDetail);
  *       409:
  *         description: Conflict - User không ở trạng thái PENDING
  */
-Router.patch('/users/:id/approve', adminUserController.approveUser);
+Router.patch('/users/:id/approve', adminController.approveUser);
 
 /**
  * @swagger
@@ -165,7 +165,7 @@ Router.patch('/users/:id/approve', adminUserController.approveUser);
  *       422:
  *         description: Validation error - Lý do không hợp lệ
  */
-Router.patch('/users/:id/reject', adminUserValidation.rejectUser, adminUserController.rejectUser);
+Router.patch('/users/:id/reject', adminValidation.rejectUser, adminController.rejectUser);
 
 /**
  * @swagger
@@ -194,7 +194,7 @@ Router.patch('/users/:id/reject', adminUserValidation.rejectUser, adminUserContr
  *       409:
  *         description: Conflict - User không ở trạng thái REJECTED
  */
-Router.patch('/users/:id/re-review', adminUserController.reReviewUser);
+Router.patch('/users/:id/re-review', adminController.reReviewUser);
 
 /**
  * @swagger
@@ -223,6 +223,6 @@ Router.patch('/users/:id/re-review', adminUserController.reReviewUser);
  *       409:
  *         description: Conflict - User đã bị xóa trước đó
  */
-Router.delete('/users/:id/soft-delete', adminUserController.softDeleteUser);
+Router.delete('/users/:id/soft-delete', adminController.softDeleteUser);
 
-export const adminUserRoute = Router;
+export const adminRoute = Router;

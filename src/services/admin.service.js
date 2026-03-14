@@ -4,7 +4,7 @@ import { StatusCodes } from 'http-status-codes';
 import { patientModel } from '~/models/patient.model';
 import { doctorModel } from '~/models/doctorModel';
 import ApiError from '~/utils/ApiError';
-// lấy ra toàn bộ user tồn tại 
+// lấy ra toàn bộ user tồn tại
 const getUsers = async ({ status, page, limit, deleted }) => {
     if (deleted) {
         return await userModel.findDeleted({ page, limit });
@@ -26,19 +26,14 @@ const approveUser = async ({ targetUserId, adminId }) => {
 
     // Chỉ duyệt được user đang PENDING
     if (user.status !== userModel.USER_STATUS.PENDING) {
-        throw new ApiError(
-            StatusCodes.CONFLICT,
-            `Không thể duyệt user ở trạng thái ${user.status}`,
-        );
+        throw new ApiError(StatusCodes.CONFLICT, `Không thể duyệt user ở trạng thái ${user.status}`);
     }
 
     // Cập nhật status → ACTIVE
-    const updatedUser = await userModel.updateById(targetUserId, {
+    await userModel.updateById(targetUserId, {
         status: userModel.USER_STATUS.ACTIVE,
-        isActive: true,
         approvedAt: new Date(),
         approvedBy: adminId,
-        rejectionReason: null,
     });
 
     // Ghi audit log
@@ -50,24 +45,21 @@ const approveUser = async ({ targetUserId, adminId }) => {
         details: { note: `Admin approved user ${targetUserId}` },
     });
 
-    return { message: 'User approved successfully', user: updatedUser };
+    return 'Người dùng được duyệt thành công';
 };
 
 // Từ chối user → REJECTED
 const rejectUser = async ({ targetUserId, adminId, reason }) => {
     const user = await userModel.findById(targetUserId);
     if (!user) throw new ApiError(StatusCodes.NOT_FOUND, 'User không tồn tại');
-
+    console.log(user);
     // Chỉ từ chối được user đang PENDING
     if (user.status !== userModel.USER_STATUS.PENDING) {
-        throw new ApiError(
-            StatusCodes.CONFLICT,
-            `Không thể từ chối user ở trạng thái ${user.status}`,
-        );
+        throw new ApiError(StatusCodes.CONFLICT, `Không thể từ chối user ở trạng thái ${user.status}`);
     }
 
     // Cập nhật status → REJECTED
-    const updatedUser = await userModel.updateById(targetUserId, {
+    await userModel.updateById(targetUserId, {
         status: userModel.USER_STATUS.REJECTED,
         rejectionReason: reason,
     });
@@ -81,7 +73,7 @@ const rejectUser = async ({ targetUserId, adminId, reason }) => {
         details: { note: `Admin rejected user ${targetUserId}. Reason: ${reason}` },
     });
 
-    return { message: 'User rejected', user: updatedUser };
+    return 'Người dùng bị từ chối';
 };
 
 // Phục hồi user REJECTED → PENDING (cho phép xét duyệt lại)
@@ -96,11 +88,8 @@ const reReviewUser = async ({ targetUserId, adminId }) => {
         );
     }
 
-    const updatedUser = await userModel.updateById(targetUserId, {
+    await userModel.updateById(targetUserId, {
         status: userModel.USER_STATUS.PENDING,
-        rejectionReason: null,
-        approvedAt: null,
-        approvedBy: null,
     });
 
     await auditLogModel.createLog({
@@ -111,7 +100,7 @@ const reReviewUser = async ({ targetUserId, adminId }) => {
         details: { note: `Admin re-reviewed user ${targetUserId} (REJECTED → PENDING)` },
     });
 
-    return { message: 'User đã được chuyển về trạng thái chờ duyệt', user: updatedUser };
+    return 'User đã được chuyển về trạng thái chờ duyệt';
 };
 
 // Thêm hàm softDeleteUser để admin có thể softdelete 1 user trong hệ thống
@@ -141,11 +130,10 @@ const softDeleteUser = async ({ targetUserId, adminId }) => {
         details: { note: `Admin soft-deleted user ${targetUserId} (role: ${user.role})` },
     });
 
-    return { message: `User ${targetUserId} đã bị xóa`, role: user.role };
+    return `User ${targetUserId} đã bị xóa`;
 };
 
-
-export const adminUserService = {
+export const adminService = {
     getUsers,
     getUserDetail,
     approveUser,

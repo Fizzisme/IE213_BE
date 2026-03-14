@@ -9,8 +9,6 @@ const registerSchema = z.object({
     password: z.string().min(8),
 
     email: z.string().regex(/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, 'Email không hợp lệ'),
-
-    role: z.string().optional(),
 });
 // Tạo Schema createPatient
 const createPatientSchema = z.object({

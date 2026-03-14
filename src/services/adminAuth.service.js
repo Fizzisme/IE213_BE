@@ -31,15 +31,14 @@ const issueTokens = async (user) => {
 // Hàm login cho user
 const login = async ({ nationId, password }) => {
     const user = await userModel.findByNationId(nationId);
-
     // Generic message để tránh lộ thông tin account
     if (!user) {
-        throw new ApiError(StatusCodes.UNAUTHORIZED, 'Thông tin đăng nhập không hợp lệ');
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Thông tin đăng nhập không hợp lệ');
     }
 
     const localProvider = user.authProviders?.find((p) => p.type === 'LOCAL');
     if (!localProvider) {
-        throw new ApiError(StatusCodes.UNAUTHORIZED, 'Thông tin đăng nhập không hợp lệ');
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Thông tin đăng nhập không hợp lệ');
     }
     // Kiểm tra mật khẩu có hợp lý hay chưa
     const isPasswordValid = bcrypt.compareSync(password, localProvider.passwordHash);
@@ -70,8 +69,6 @@ const login = async ({ nationId, password }) => {
 
     return issueTokens(user);
 };
-
-
 
 export const adminAuthService = {
     login,

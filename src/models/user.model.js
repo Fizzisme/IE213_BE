@@ -10,11 +10,11 @@ const USER_ROLES = {
 };
 
 const USER_STATUS = {
-  PENDING: 'PENDING',
-  ACTIVE: 'ACTIVE',
-  REJECTED: 'REJECTED',
-  INACTIVE: 'INACTIVE'
-}
+    PENDING: 'PENDING',
+    ACTIVE: 'ACTIVE',
+    REJECTED: 'REJECTED',
+    INACTIVE: 'INACTIVE',
+};
 
 const authProviderSchema = new mongoose.Schema(
     {
@@ -54,19 +54,12 @@ const userSchema = new mongoose.Schema(
             default: USER_ROLES.PATIENT,
         },
 
-        isActive: {
-            type: Boolean,
-            default: false,
-            required: true,
-        },
-
         _destroy: {
             type: Boolean,
             default: false,
             required: true,
         },
 
-         // ===== Thêm các trường admin approval field vào trong nx  =====
         status: {
             type: String,
             enum: Object.values(USER_STATUS),
@@ -173,13 +166,10 @@ const softDelete = async (userId) => {
         {
             _destroy: true,
             status: USER_STATUS.INACTIVE,
-            isActive: false,
         },
         { new: true },
     );
 };
-
-
 
 export const userModel = {
     USER_ROLES,
@@ -195,5 +185,4 @@ export const userModel = {
     findDetailById,
     findDeleted,
     softDelete,
-
 };

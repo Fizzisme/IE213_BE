@@ -27,7 +27,7 @@ const adminSchema = new Schema(
 
         permissions: {
             type: [String],
-            default: ['VIEW_AUDIT_LOG', 'VIEW_MEDICAL_RECORD', 'VIEW_HIV_TEST'],
+            default: ['VIEW_AUDIT_LOG', 'VIEW_MEDICAL_RECORD'],
         },
 
         status: {

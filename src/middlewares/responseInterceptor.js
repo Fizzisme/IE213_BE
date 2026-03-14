@@ -15,11 +15,14 @@ export const responseInterceptor = (req, res, next) => {
                 responseTime: `${duration} ms`,
             });
         }
+        // Nếu response controller là string
+        const isString = typeof data === 'string';
+
         // Format lại response trả về
         const response = {
             statusCode: res.statusCode,
-            message: res.statusMessage || 'Success',
-            data: data ?? null,
+            message: isString ? data : res.statusMessage || 'Success',
+            data: isString ? undefined : data ?? null,
             timestamp: new Date().toISOString(),
             path: req.originalUrl,
             responseTime: `${duration} ms`,

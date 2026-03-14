@@ -17,8 +17,6 @@ const register = async (payload) => {
 
     // Tạo người dùng
     const user = await userModel.createNew({
-        // KHi user đăng kí tài khoản mặc định role là PATIENT
-        role: userModel.USER_ROLES.PATIENT,
         authProviders: [
             payload.nationId && {
                 type: 'LOCAL',
@@ -59,12 +57,12 @@ const verifyWalletLogin = async (walletAddress, signature) => {
     // Lấy nonce từ store
     const nonce = NONCE_STORE.get(walletAddress.toLowerCase());
     // Nếu không có trả về lỗi
-    if (!nonce) throw new ApiError(StatusCodes.NOT_FOUND, 'Nonce expired');
+    if (!nonce) throw new ApiError(StatusCodes.NOT_FOUND, 'Nonce đã hết hạn');
 
     const recovered = ethers.verifyMessage(nonce, signature);
 
     if (recovered.toLowerCase() !== walletAddress.toLowerCase()) {
-        throw new ApiError(StatusCodes.NOT_FOUND, 'Invalid signature');
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Signature không hợp lệ');
     }
 
     NONCE_STORE.delete(walletAddress.toLowerCase());
@@ -108,6 +106,7 @@ const verifyWalletLogin = async (walletAddress, signature) => {
     return {
         accessToken,
         refreshToken,
+        status: user.status,
     };
 };
 
@@ -132,7 +131,7 @@ const loginByNationId = async (data) => {
     const localProvider = userExisted?.authProviders.find((p) => p.type === 'LOCAL');
     if (!localProvider) throw new ApiError(StatusCodes.UNAUTHORIZED, 'Thông tin đăng nhập không hợp lệ');
     if (!bcrypt.compareSync(password, localProvider.passwordHash)) {
-        throw new ApiError(StatusCodes.UNAUTHORIZED, 'Thông tin đăng nhập không hợp lệ');
+        throw new ApiError(StatusCodes.UNAUTHORIZED, 'Sai Mật khẩu');
     }
 
     // Kiểm tra trạng thái tài khoản trước khi cấp token
@@ -173,6 +172,7 @@ const loginByNationId = async (data) => {
     return {
         accessToken,
         refreshToken,
+        status: userExisted.status,
     };
 };
 

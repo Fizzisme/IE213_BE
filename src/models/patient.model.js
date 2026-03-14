@@ -42,11 +42,6 @@ const patientSchema = new mongoose.Schema(
             required: true,
         },
 
-        isActive: {
-            type: Boolean,
-            default: false,
-            required: true,
-        },
         deletedAt: {
             type: Date,
             default: null,
@@ -97,11 +92,7 @@ const softDelete = async (patientId) => {
 
 // Thêm trước dòng export
 const softDeleteByUserId = async (userId) => {
-    return await PatientModel.findOneAndUpdate(
-        { userId, deletedAt: null },
-        { deletedAt: new Date(), isActive: false },
-        { new: true },
-    );
+    return await PatientModel.findOneAndUpdate({ userId, deletedAt: null }, { deletedAt: new Date() }, { new: true });
 };
 
 export const patientModel = {
