@@ -132,7 +132,7 @@ const loginByNationId = async (data) => {
     // Generic message để tránh lộ thông tin account
     if (!userExisted) throw new ApiError(StatusCodes.UNAUTHORIZED, 'Thông tin đăng nhập không hợp lệ');
 
-    // Tài khoản ADMIN phải đi qua route login admin riêng
+    // Ko cho phép admin đăng nhập vào role của người bình thường
     if (userExisted.role === userModel.USER_ROLES.ADMIN) {
         throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản ADMIN vui lòng đăng nhập tại /v1/admin/auth/login');
     }
@@ -143,7 +143,9 @@ const loginByNationId = async (data) => {
 
     // Tìm phương thức đăng nhập local
     const localProvider = userExisted?.authProviders.find((p) => p.type === 'LOCAL');
+    
     if (!localProvider) throw new ApiError(StatusCodes.UNAUTHORIZED, 'Thông tin đăng nhập không hợp lệ');
+    // Kiểm tra tính hợp lệ của password
     if (!bcrypt.compareSync(password, localProvider.passwordHash)) {
         throw new ApiError(StatusCodes.UNAUTHORIZED, 'Thông tin đăng nhập không hợp lệ');
     }
