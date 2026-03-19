@@ -29,13 +29,21 @@ const auditLogSchema = new Schema(
 
         action: {
             type: String,
-            enum: ['LOGIN_LOCAL', 'LOGIN_WALLET', 'ADMIN_OVERRIDE', 'REGISTER_USER', 'CREATE_PATIENT'],
+            enum: [
+                'LOGIN_LOCAL',
+                'LOGIN_WALLET',
+                'ADMIN_OVERRIDE',
+                'REGISTER_USER',
+                'CREATE_PATIENT',
+                'CREATE_MEDICAL_RECORD',
+                'CREATE_TEST_RESULT',
+            ],
             required: true,
         },
 
         entityType: {
             type: String,
-            enum: ['MEDICAL_RECORD', 'AUDIT_LOG', 'PATIENT', 'USER'],
+            enum: ['MEDICAL_RECORD', 'AUDIT_LOG', 'PATIENT', 'USER', 'TEST_RESULT'],
             default: null,
         },
         entityId: {

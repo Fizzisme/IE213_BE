@@ -1,7 +1,7 @@
 // src/utils/zodValidate.js
-export const zodValidate = (schema) => (req, res, next) => {
+export const paramsValidate = (schema) => (req, res, next) => {
     // Kết quả validate
-    const result = schema.safeParse(req.body);
+    const result = schema.safeParse(req.params);
     // Nếu không thành công đưa về middleware xử lý lỗi tập trung
     if (!result.success) {
         // trả về 1 mảng mới errors
@@ -18,7 +18,7 @@ export const zodValidate = (schema) => (req, res, next) => {
     }
 
     // Thành công thì cho đi qua controller
-    req.body = result.data;
+    req.params = result.data;
 
     next();
 };

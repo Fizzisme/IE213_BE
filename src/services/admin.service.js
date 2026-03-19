@@ -2,7 +2,7 @@ import { userModel } from '~/models/user.model';
 import { auditLogModel } from '~/models/auditLog.model';
 import { StatusCodes } from 'http-status-codes';
 import { patientModel } from '~/models/patient.model';
-import { doctorModel } from '~/models/doctorModel';
+import { doctorModel } from '~/models/doctor.model';
 import ApiError from '~/utils/ApiError';
 // lấy ra toàn bộ user tồn tại
 const getUsers = async ({ status, page, limit, deleted }) => {
