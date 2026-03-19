@@ -7,6 +7,7 @@ const USER_ROLES = {
     PATIENT: 'PATIENT',
     DOCTOR: 'DOCTOR',
     ADMIN: 'ADMIN',
+    LAB_TECH: 'LAB_TECH',
 };
 
 const USER_STATUS = {
