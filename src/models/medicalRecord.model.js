@@ -6,12 +6,15 @@ const MEDICAL_RECORD_TYPES = {
     HIV_TEST: 'HIV_TEST',
     LAB_RESULT: 'LAB_RESULT',
     PRESCRIPTION: 'PRESCRIPTION',
-    //     ...
+    DIABETES_TEST: 'DIABETES_TEST',
 };
 
 const MEDICAL_RECORD_STATUS = {
-    ACTIVE: 'ACTIVE',
-    REVOKED: 'REVOKED',
+    CREATED: 'CREATED',
+    WAITING_RESULT: 'WAITING_RESULT',
+    HAS_RESULT: 'HAS_RESULT',
+    DIAGNOSED: 'DIAGNOSED',
+    COMPLETE: 'COMPLETE',
 };
 
 const medicalRecordSchema = new mongoose.Schema(
@@ -22,17 +25,15 @@ const medicalRecordSchema = new mongoose.Schema(
             required: true,
         },
 
-        doctorId: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'doctors',
-            required: true,
-        },
-
-        // Created by Who??
         createdBy: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'users',
             required: true,
+        },
+
+        testResultId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'test_results',
         },
 
         type: {
@@ -41,21 +42,18 @@ const medicalRecordSchema = new mongoose.Schema(
             required: true,
         },
 
-        refId: {
-            type: mongoose.Schema.Types.ObjectId,
-            required: true,
-        },
-
         status: {
             type: String,
             enum: Object.values(MEDICAL_RECORD_STATUS),
-            default: MEDICAL_RECORD_STATUS.ACTIVE,
+            default: MEDICAL_RECORD_STATUS.CREATED,
         },
 
-        auditLogId: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'audit_logs',
-            default: null,
+        note: {
+            type: String,
+        },
+
+        diagnosis: {
+            type: String,
         },
 
         _destroy: {
@@ -75,20 +73,21 @@ medicalRecordSchema.index({ patientId: 1, createdAt: -1 });
 // Truy vấn theo loại
 medicalRecordSchema.index({ type: 1 });
 
-// Chống trùng record logic
-medicalRecordSchema.index({ type: 1, refId: 1 }, { unique: true });
-
 const MedicalRecordModel = mongoose.model(COLLECTION_NAME, medicalRecordSchema);
 
 const createNew = async (data) => {
     return await MedicalRecordModel.create(data);
 };
 
-const findByPatientId = async (patientId) => {
+const findOneById = async (id) => {
+    return await MedicalRecordModel.findOne({ _id: id, _destroy: false });
+};
+
+const findOneByPatientId = async (patientId, status) => {
     return await MedicalRecordModel.find({
         patientId,
-        status: MEDICAL_RECORD_STATUS.ACTIVE,
         _destroy: false,
+        status: { $in: status },
     }).sort({ createdAt: -1 });
 };
 
@@ -103,11 +102,17 @@ const revokeRecord = async (recordId, auditLogId) => {
     );
 };
 
+const update = async (medicalRecordId, record) => {
+    return await MedicalRecordModel.updateOne({ _id: medicalRecordId }, { $set: record });
+};
+
 export const medicalRecordModel = {
     MEDICAL_RECORD_TYPES,
     MEDICAL_RECORD_STATUS,
     MedicalRecordModel,
     createNew,
-    findByPatientId,
+    findOneByPatientId,
     revokeRecord,
+    findOneById,
+    update,
 };
