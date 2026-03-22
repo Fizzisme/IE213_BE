@@ -125,6 +125,7 @@ const verifyWalletLogin = async (walletAddress, signature) => {
         accessToken,
         refreshToken,
         status: user.status,
+        hasProfile: user.hasProfile,
     };
 };
 
@@ -191,6 +192,7 @@ const loginByNationId = async (data) => {
         accessToken,
         refreshToken,
         status: userExisted.status,
+        hasProfile: userExisted.hasProfile,
     };
 };
 
