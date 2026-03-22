@@ -19,6 +19,11 @@ const createPatient = async (user, payload) => {
         birthYear: payload.dob,
         phoneNumber: payload.phoneNumber,
     });
+    // Cập nhật user đã có profile
+    await userModel.updateById(patient.userId, {
+        hasProfile: true,
+    });
+
     // Tạo audit log
     await auditLogModel.createLog({
         userId: userExisted._id,
