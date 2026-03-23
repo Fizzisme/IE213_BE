@@ -89,4 +89,32 @@ Router.post('/login/nationId', authValidation.loginByNationId, authController.lo
  */
 Router.post('/login/wallet', authController.loginByWallet);
 
+/**
+ * @swagger
+ * v1/auth/logout:
+ *   delete:
+ *     summary: Đăng xuất tài khoản (xóa accessToken và refreshToken trong cookie)
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Đăng xuất thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 statusCode:
+ *                   type: number
+ *                   example: 200
+ *                 message:
+ *                   type: string
+ *                   example: Logout thành công
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Lỗi server
+ */
+Router.delete('/logout', authController.logout);
 export const authRoute = Router;

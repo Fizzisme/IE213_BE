@@ -12,4 +12,31 @@ const createPatient = async (req, res, next) => {
     }
 };
 
-export const patientController = { createPatient };
+const getAll = async (req, res, next) => {
+    try {
+        const result = await patientService.getAll();
+        res.status(StatusCodes.OK).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getPatientById = async (req, res, next) => {
+    try {
+        const result = await patientService.getPatientById(req.params.patientId);
+        res.status(StatusCodes.OK).json(result);
+    } catch (err) {
+        next(err);
+    }
+};
+
+const getMyProfile = async (req, res, next) => {
+    try {
+        const result = await patientService.getMyProfile(req.user);
+        res.status(StatusCodes.OK).json(result);
+    } catch (err) {
+        next(err);
+    }
+};
+
+export const patientController = { createPatient, getAll, getPatientById, getMyProfile };
