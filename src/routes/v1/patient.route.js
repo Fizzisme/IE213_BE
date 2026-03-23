@@ -56,6 +56,61 @@ Router.use(verifyToken, authorizeRoles('PATIENT'));
  *       400:
  *         description: Dữ liệu không hợp lệ
  */
-Router.post('/', patientValidation.createPatient, patientController.createPatient);
+Router.post('/', patientValidation.createPatient, patientController.createPatient)
+    /**
+     * @swagger
+     * v1/patients/me:
+     *   get:
+     *     summary: Lấy thông tin hồ sơ bệnh nhân của chính người dùng
+     *     tags: [Patient]
+     *     security:
+     *       - bearerAuth: []
+     *     responses:
+     *       200:
+     *         description: Lấy thông tin thành công
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 statusCode:
+     *                   type: number
+     *                   example: 200
+     *                 message:
+     *                   type: string
+     *                   example: Success
+     *                 data:
+     *                   type: object
+     *                   properties:
+     *                     id:
+     *                       type: string
+     *                       example: "69ba902193958774013b93e9"
+     *                     userId:
+     *                       type: string
+     *                       example: "69b8ebdde2fbbfead81f3502"
+     *                     fullName:
+     *                       type: string
+     *                       example: "Nguyễn Văn A"
+     *                     gender:
+     *                       type: string
+     *                       enum: [M, F]
+     *                       example: "M"
+     *                     birthYear:
+     *                       type: number
+     *                       example: 2000
+     *                     phoneNumber:
+     *                       type: string
+     *                       example: "0912345678"
+     *                     createdAt:
+     *                       type: string
+     *                       example: "2026-03-18T11:44:33.337Z"
+     *       401:
+     *         description: Unauthorized
+     *       404:
+     *         description: Không tìm thấy hồ sơ bệnh nhân
+     *       500:
+     *         description: Lỗi server
+     */
+    .get('/me', patientController.getMyProfile);
 
 export const patientRoute = Router;
