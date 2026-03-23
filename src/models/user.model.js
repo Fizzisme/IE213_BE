@@ -67,6 +67,10 @@ const userSchema = new mongoose.Schema(
             default: USER_STATUS.PENDING,
             index: true,
         },
+        hasProfile: {
+            type: Boolean,
+            default: false,
+        },
         approvedAt: {
             type: Date,
             default: null,

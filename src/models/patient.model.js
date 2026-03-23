@@ -61,11 +61,20 @@ const createNew = async (data) => {
     return await PatientModel.create(data);
 };
 
+const getAll = async () => {
+    return await PatientModel.find()
+        .select('_id userId fullName gender birthYear phoneNumber createdAt')
+        .sort({ createdAt: -1 })
+        .lean();
+};
+
 const findByUserId = async (userId) => {
     return await PatientModel.findOne({
         userId,
         deletedAt: null,
-    }).lean();
+    })
+        .select('_id userId fullName gender birthYear phoneNumber createdAt')
+        .lean();
 };
 
 const findByNationId = async (nationId) => {
@@ -99,6 +108,7 @@ export const patientModel = {
     PATIENT_STATUS,
     PatientModel,
     createNew,
+    getAll,
     findByUserId,
     findById,
     updateById,

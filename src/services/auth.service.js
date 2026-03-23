@@ -86,6 +86,24 @@ const verifyWalletLogin = async (walletAddress, signature) => {
         entityId: user._id,
     });
 
+    // Kiểm tra trạng thái tài khoản trước khi cấp token
+    switch (user.status) {
+        case 'PENDING':
+            throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản đang chờ admin duyệt');
+        case 'REJECTED':
+            throw new ApiError(
+                StatusCodes.FORBIDDEN,
+                `Tài khoản đã bị từ chối. Lý do: ${user.rejectionReason || 'Không rõ'}`,
+            );
+        case 'INACTIVE':
+            throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản đã bị vô hiệu hóa');
+        case 'ACTIVE':
+            // Cho phép đăng nhập bình thường
+            break;
+        default:
+            throw new ApiError(StatusCodes.FORBIDDEN, 'Trạng thái tài khoản không hợp lệ');
+    }
+
     // Tạo ra thông tin người dùng để mã hóa vào token
     const userInfo = {
         _id: user._id,
@@ -107,6 +125,7 @@ const verifyWalletLogin = async (walletAddress, signature) => {
         accessToken,
         refreshToken,
         status: user.status,
+        hasProfile: user.hasProfile,
     };
 };
 
@@ -173,6 +192,7 @@ const loginByNationId = async (data) => {
         accessToken,
         refreshToken,
         status: userExisted.status,
+        hasProfile: userExisted.hasProfile,
     };
 };
 

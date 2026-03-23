@@ -4,6 +4,7 @@ import { verifyToken } from '~/middlewares/verifyToken';
 import { medicalRecordController } from '~/controllers/medicalRecord.controller';
 import { medicalRecordValidation } from '~/validations/medicalRecord.validation';
 import { testResultController } from '~/controllers/testResult.Controller';
+import { patientController } from '~/controllers/patient.controller';
 
 const Router = express.Router();
 
@@ -195,6 +196,133 @@ Router
      *         description: Lỗi server
      */
     .get('/test-results', testResultController.getAll)
+    /**
+     * @swagger
+     * v1/doctors/patients:
+     *   get:
+     *     summary: Lấy danh sách tất cả bệnh nhân
+     *     tags: [DOCTOR]
+     *     security:
+     *       - bearerAuth: []
+     *     parameters:
+     *       - in: query
+     *         name: page
+     *         required: false
+     *         schema:
+     *           type: number
+     *         example: 1
+     *       - in: query
+     *         name: limit
+     *         required: false
+     *         schema:
+     *           type: number
+     *         example: 10
+     *     responses:
+     *       200:
+     *         description: Lấy danh sách bệnh nhân thành công
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 statusCode:
+     *                   type: number
+     *                   example: 200
+     *                 message:
+     *                   type: string
+     *                   example: Success
+     *                 data:
+     *                   type: array
+     *                   items:
+     *                     type: object
+     *                     properties:
+     *                       id:
+     *                         type: string
+     *                         example: "69ba902193958774013b93e9"
+     *                       fullName:
+     *                         type: string
+     *                         example: "Nguyễn Văn A"
+     *                       gender:
+     *                         type: string
+     *                         enum: [M, F]
+     *                         example: "M"
+     *                       birthYear:
+     *                         type: number
+     *                         example: 2000
+     *                       phoneNumber:
+     *                         type: string
+     *                         example: "0912345678"
+     *                       createdAt:
+     *                         type: string
+     *                         example: "2026-03-18T11:44:33.337Z"
+     *       401:
+     *         description: Unauthorized
+     *       403:
+     *         description: Forbidden
+     */
+    .get('/patients', patientController.getAll)
+    /**
+     * @swagger
+     * v1/doctors/patients/{patientId}:
+     *   get:
+     *     summary: Lấy thông tin chi tiết bệnh nhân theo ID
+     *     tags: [DOCTOR]
+     *     security:
+     *       - bearerAuth: []
+     *     parameters:
+     *       - name: patientId
+     *         in: path
+     *         required: true
+     *         schema:
+     *           type: string
+     *         example: "69ba902193958774013b93e9"
+     *     responses:
+     *       200:
+     *         description: Lấy thông tin bệnh nhân thành công
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 statusCode:
+     *                   type: number
+     *                   example: 200
+     *                 message:
+     *                   type: string
+     *                   example: Success
+     *                 data:
+     *                   type: object
+     *                   properties:
+     *                     id:
+     *                       type: string
+     *                       example: "69ba902193958774013b93e9"
+     *                     userId:
+     *                       type: string
+     *                       example: "69b8ebdde2fbbfead81f3502"
+     *                     fullName:
+     *                       type: string
+     *                       example: "Nguyễn Văn A"
+     *                     gender:
+     *                       type: string
+     *                       enum: [M, F]
+     *                       example: "M"
+     *                     birthYear:
+     *                       type: number
+     *                       example: 2000
+     *                     phoneNumber:
+     *                       type: string
+     *                       example: "0912345678"
+     *                     createdAt:
+     *                       type: string
+     *                       example: "2026-03-18T11:44:33.337Z"
+     *       400:
+     *         description: ID không hợp lệ
+     *       401:
+     *         description: Unauthorized
+     *       404:
+     *         description: Không tìm thấy bệnh nhân
+     */
+    .get('/patients/:patientId', patientController.getPatientById)
     /**
      * @swagger
      * v1/doctors/patients/{patientId}/medical-records:
