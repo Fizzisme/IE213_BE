@@ -111,6 +111,6 @@ Router.post('/', patientValidation.createPatient, patientController.createPatien
      *       500:
      *         description: Lỗi server
      */
-    .get('/me', patientController.getMyProfile);
+Router.get('/me', patientController.getMyProfile);
 
 export const patientRoute = Router;

@@ -117,4 +117,5 @@ Router.post('/login/wallet', authController.loginByWallet);
  *         description: Lỗi server
  */
 Router.delete('/logout', authController.logout);
+
 export const authRoute = Router;
