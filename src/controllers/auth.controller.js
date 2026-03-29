@@ -32,7 +32,7 @@ const loginByNationId = async (req, res, next) => {
         next(err);
     }
 };
-
+// Controller đăng nhập bằng ví
 const loginByWallet = async (req, res, next) => {
     try {
         const { walletAddress, signature } = req.body;
@@ -62,8 +62,29 @@ const loginByWallet = async (req, res, next) => {
     }
 };
 
+const logout = async (req, res, next) => {
+    try {
+        res.clearCookie('accessToken', {
+            httpOnly: true,
+            secure: true,
+            sameSite: 'none',
+        });
+
+        res.clearCookie('refreshToken', {
+            httpOnly: true,
+            secure: true,
+            sameSite: 'none',
+        });
+
+        return res.status(StatusCodes.OK).json('Đăng xuất thành công');
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const authController = {
     register,
     loginByWallet,
     loginByNationId,
+    logout,
 };

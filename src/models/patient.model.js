@@ -37,21 +37,11 @@ const patientSchema = new mongoose.Schema(
             required: true,
         },
 
-        phoneEncrypted: {
+        phoneNumber: {
             type: String,
-            default: null,
-        },
-
-        emailEncrypted: {
-            type: String,
-            default: null,
-        },
-
-        isActive: {
-            type: Boolean,
-            default: false,
             required: true,
         },
+
         deletedAt: {
             type: Date,
             default: null,
@@ -63,17 +53,34 @@ const patientSchema = new mongoose.Schema(
     },
 );
 
+patientSchema.index({ phoneNumber: 1 }, { unique: true, sparse: true });
+
 const PatientModel = mongoose.model(COLLECTION_NAME, patientSchema);
 
 const createNew = async (data) => {
     return await PatientModel.create(data);
 };
 
+const getAll = async () => {
+    return await PatientModel.find()
+        .select('_id userId fullName gender birthYear phoneNumber createdAt')
+        .sort({ createdAt: -1 })
+        .lean();
+};
+
 const findByUserId = async (userId) => {
     return await PatientModel.findOne({
         userId,
         deletedAt: null,
-    }).lean();
+    })
+        .select('_id userId fullName gender birthYear phoneNumber createdAt')
+        .lean();
+};
+
+const findByNationId = async (nationId) => {
+    return await PatientModel.findOne({
+        nationId: nationId,
+    });
 };
 
 const findById = async (patientId) => {
@@ -92,12 +99,20 @@ const softDelete = async (patientId) => {
     );
 };
 
+// Thêm trước dòng export
+const softDeleteByUserId = async (userId) => {
+    return await PatientModel.findOneAndUpdate({ userId, deletedAt: null }, { deletedAt: new Date() }, { new: true });
+};
+
 export const patientModel = {
     PATIENT_STATUS,
     PatientModel,
     createNew,
+    getAll,
     findByUserId,
     findById,
     updateById,
     softDelete,
+    softDeleteByUserId,
+    findByNationId,
 };
