@@ -69,7 +69,12 @@ const softDeleteByUserId = async (userId) => {
     );
 };
 
+const findOneByUserId = async (userId) => {
+    return await DoctorModel.find({ userId: userId });
+};
+
 export const doctorModel = {
     DoctorModel,
     softDeleteByUserId,
+    findOneByUserId,
 };
