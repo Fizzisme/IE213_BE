@@ -5,6 +5,7 @@ import { medicalRecordController } from '~/controllers/medicalRecord.controller'
 import { medicalRecordValidation } from '~/validations/medicalRecord.validation';
 import { testResultController } from '~/controllers/testResult.Controller';
 import { patientController } from '~/controllers/patient.controller';
+import { doctorController } from '~/controllers/doctor.controller';
 
 const Router = express.Router();
 
@@ -417,5 +418,7 @@ Router
         '/medical-records/:medicalRecordId/diagnosis',
         medicalRecordValidation.diagnosis,
         medicalRecordController.diagnosis,
-    );
+    )
+    .get('/medical-records', medicalRecordController.getAll)
+    .get('/me', doctorController.getMyProfile);
 export const doctorRoute = Router;
