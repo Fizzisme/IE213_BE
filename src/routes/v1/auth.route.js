@@ -2,6 +2,7 @@ import express from 'express';
 import { authController } from '~/controllers/auth.controller';
 import { authValidation } from '~/validations/auth.validation';
 import { authMiddleware } from '~/middlewares/authMiddleware';
+import { verifyToken } from '~/middlewares/verifyToken';
 
 const Router = express.Router();
 
@@ -117,4 +118,7 @@ Router.post('/login/wallet', authController.loginByWallet);
  *         description: Lỗi server
  */
 Router.delete('/logout', authController.logout);
+
+Router.get('/me', verifyToken, authController.getMe);
+
 export const authRoute = Router;
