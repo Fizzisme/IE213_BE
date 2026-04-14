@@ -4,6 +4,7 @@ import { authorizeRoles } from '~/middlewares/authorizeRoles';
 import { testResultController } from '~/controllers/testResult.Controller';
 import { testResultValidation } from '~/validations/testResult.validation';
 import { medicalRecordController } from '~/controllers/medicalRecord.controller';
+import { labTechController } from '~/controllers/labTech.controller';
 
 const Router = express.Router();
 
@@ -84,6 +85,7 @@ Router
         testResultValidation.createNew,
         testResultController.createNew,
     )
-    .get('/medical-records', medicalRecordController.getAll);
+    .get('/medical-records', medicalRecordController.getAll)
+    .get('/me', labTechController.getMyProfile);
 
 export const labTechRoute = Router;

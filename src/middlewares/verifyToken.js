@@ -8,19 +8,14 @@ import ApiError from '~/utils/ApiError';
 export const verifyToken = async (req, res, next) => {
     try {
         // Lấy accessToken từ cookie hoặc Bearer header
-        const accessToken =
-            req.cookies?.accessToken ||
-            req.headers.authorization?.replace('Bearer ', '');
+        const accessToken = req.cookies?.accessToken || req.headers.authorization?.replace('Bearer ', '');
 
         if (!accessToken) {
             throw new ApiError(StatusCodes.UNAUTHORIZED, 'Unauthorized: Token not found');
         }
 
         // Verify token và gán vào req.jwtDecoded
-        const decoded = await JwtProvider.verifyToken(
-            accessToken,
-            env.ACCESS_TOKEN_SECRET_SIGNATURE,
-        );
+        const decoded = await JwtProvider.verifyToken(accessToken, env.ACCESS_TOKEN_SECRET_SIGNATURE);
 
         req.jwtDecoded = decoded;
         // Gán req.user để các middleware khác (authorizeRoles) sử dụng được

@@ -76,7 +76,7 @@ const diagnosis = async (medicalRecordId, data, currentUser) => {
     return 'Chẩn đoán hồ sơ bệnh án thành công';
 };
 // Service lấy hồ sơ bệnh án theo filter
-const getAll = async (statusArray) => {
+const getAll = async (statusArray, sortOrder) => {
     // Loại bỏ các document đã bị xóa mềm
     const query = {
         _destroy: false,
@@ -86,7 +86,23 @@ const getAll = async (statusArray) => {
         query.status = { $in: statusArray };
     }
 
-    return await medicalRecordModel.MedicalRecordModel.find(query).sort({ createdAt: -1 });
+    // Lấy cả thông tin bệnh nhân trả về
+    const medicalRecords = await medicalRecordModel.MedicalRecordModel.find(query)
+        .populate({
+            path: 'patientId',
+            select: '_id fullName gender birthYear phoneNumber avatar',
+        })
+        .sort({ createdAt: sortOrder });
+
+    // Rename lại object thông tin bệnh nhân
+    return medicalRecords.map((record) => {
+        const obj = record.toObject();
+
+        obj.patientInfo = obj.patientId;
+        delete obj.patientId;
+
+        return obj;
+    });
 };
 
 const getDetail = async (medicalRecordId) => {
