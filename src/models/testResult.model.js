@@ -20,7 +20,7 @@ const testResultSchema = new mongoose.Schema(
             enum: Object.values(TEST_RESULT_TYPES),
         },
         rawData: { type: Object },
-        aiAnalysis: { type: Number, default: 0 },
+        aiAnalysis: { type: Object },
         _destroy: {
             type: Boolean,
             default: false,
