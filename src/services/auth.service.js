@@ -124,7 +124,7 @@ const verifyWalletLogin = async (walletAddress, signature) => {
     return {
         accessToken,
         refreshToken,
-        role: userExisted.role,
+        role: user.role,
         status: user.status,
         hasProfile: user.hasProfile,
     };
@@ -198,9 +198,21 @@ const loginByNationId = async (data) => {
     };
 };
 
+const getMe = async (user) => {
+    const userExisted = await userModel.findById(user._id);
+    if (!userExisted) throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy người dùng');
+    return {
+        userId: userExisted._id,
+        role: userExisted.role,
+        status: userExisted.status,
+        hasProfile: userExisted.hasProfile,
+    };
+};
+
 export const authService = {
     register,
     loginByNationId,
     createWalletNonce,
     verifyWalletLogin,
+    getMe,
 };
