@@ -2,7 +2,7 @@
 
 import { StatusCodes } from 'http-status-codes';
 import { patientService } from '~/services/patient.service';
-
+import { appointmentModel } from '~/models/appointment.model';
 const createPatient = async (req, res, next) => {
     try {
         const result = await patientService.createPatient(req.user, req.body);

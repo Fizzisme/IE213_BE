@@ -3,7 +3,7 @@ import { authorizeRoles } from '~/middlewares/authorizeRoles';
 import { verifyToken } from '~/middlewares/verifyToken';
 import { patientValidation } from '~/validations/patient.validation';
 import { patientController } from '~/controllers/patient.controller';
-
+import { appointmentController } from '~/controllers/appointment.controller';
 const Router = express.Router();
 // Tất cả route /admin/* đều phải qua verifyToken + requireAdmin
 Router.use(verifyToken, authorizeRoles('PATIENT'));
@@ -111,6 +111,7 @@ Router.post('/', patientValidation.createPatient, patientController.createPatien
      *       500:
      *         description: Lỗi server
      */
-    .get('/me', patientController.getMyProfile);
-
+    .get('/me', patientController.getMyProfile)
+    .post('/appointments', appointmentController.createAppointment)
+    .get('/appointments/me', appointmentController.getMyAppointments);
 export const patientRoute = Router;
