@@ -38,7 +38,7 @@ const createNew = async (data) => {
 };
 
 const getAllServices = async () => {
-    return await ServiceModel.find({ isActive: true }).lean();
+    return await ServiceModel.find().lean();
 };
 
 const getServiceById = async (id) => {

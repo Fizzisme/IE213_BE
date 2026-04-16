@@ -12,7 +12,7 @@ const createAppointment = async (data, patientId) => {
     const appointmentDate = new Date(appointmentDateTime);
 
     // check service
-    const service = await serviceModel.findById(serviceId);
+    const service = await serviceModel.getServiceById(serviceId);
     if (!service) {
         throw new Error('Service không tồn tại');
     }

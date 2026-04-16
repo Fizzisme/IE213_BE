@@ -29,6 +29,7 @@ const appointmentSchema = new mongoose.Schema(
             type: Date,
             required: true,
         },
+        patientDescription: String,
         description: String,
         price: Number,
         status: {
