@@ -419,6 +419,5 @@ Router
         medicalRecordValidation.diagnosis,
         medicalRecordController.diagnosis,
     )
-    .get('/medical-records', medicalRecordController.getAll)
     .get('/me', doctorController.getMyProfile);
 export const doctorRoute = Router;

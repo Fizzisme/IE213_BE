@@ -15,45 +15,61 @@ const createNew = async (medicalRecordId, body, currentUser) => {
     if (medicalRecord.status !== 'CREATED')
         throw new ApiError(StatusCodes.BAD_REQUEST, `hồ sơ bệnh án với id:${medicalRecordId} đã có kết quả xét nghiệm`);
 
-    const patient = await patientModel.findById(medicalRecord.patientId);
+    // Khai báo biến testResult
+    let testResult;
+    // Nếu là xét nghiệm tiểu đường thì dùng dịch vụ AI
+    if (testType === 'DIABETES_TEST') {
+        const patient = await patientModel.findById(medicalRecord.patientId);
 
-    const year = new Date().getUTCFullYear();
+        const year = new Date().getUTCFullYear();
 
-    const age = year - patient.birthYear;
+        const age = year - patient.birthYear;
 
-    const res = await fetch(AI_SERVICE_URL, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            Pregnancies: rawData.pregnancies,
-            Glucose: rawData.glucose,
-            BloodPressure: rawData.bloodPressure,
-            SkinThickness: rawData.skinThickness,
-            Insulin: rawData.insulin,
-            BMI: rawData.bmi,
-            DiabetesPedigreeFunction: rawData.diabetesPedigreeFunction,
-            Age: age,
-        }),
-    });
+        // AI_Service
+        const res = await fetch(AI_SERVICE_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                Pregnancies: rawData.pregnancies,
+                Glucose: rawData.glucose,
+                BloodPressure: rawData.bloodPressure,
+                SkinThickness: rawData.skinThickness,
+                Insulin: rawData.insulin,
+                BMI: rawData.bmi,
+                DiabetesPedigreeFunction: rawData.diabetesPedigreeFunction,
+                Age: age,
+            }),
+        });
 
-    const d = await res.json();
+        const d = await res.json();
 
-    // Tạo test_result
-    const testResult = await testResultModel.createNew({
-        patientId: medicalRecord.patientId,
-        medicalRecordId,
-        createdBy: currentUser._id,
-        testType,
-        rawData,
-        aiAnalysis: {
-            diabetes: d.diabetes === 1,
-            probability: Math.round(d.probability * 100),
-            risk: d.risk,
-            aiNote: d.note,
-        },
-    });
+        // Tạo test_result
+        testResult = await testResultModel.createNew({
+            patientId: medicalRecord.patientId,
+            medicalRecordId,
+            createdBy: currentUser._id,
+            testType,
+            rawData,
+            aiAnalysis: {
+                diabetes: d.diabetes === 1,
+                probability: Math.round(d.probability * 100),
+                risk: d.risk,
+                aiNote: d.note,
+            },
+        });
+    } else {
+        // Tạo test_result
+        testResult = await testResultModel.createNew({
+            patientId: medicalRecord.patientId,
+            medicalRecordId,
+            createdBy: currentUser._id,
+            testType,
+            rawData,
+        });
+    }
+
     if (!testResult) throw new ApiError(StatusCodes.NOT_FOUND, 'Tạo kết quả xét nghiệm thất bại');
 
     // Cập nhật trang thái hồ sơ bệnh án
