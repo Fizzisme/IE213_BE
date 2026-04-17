@@ -33,14 +33,14 @@ const getDetail = async (req, res, next) => {
 // Controller lấy toàn bộ hồ sơ bệnh án theo filter
 const getAll = async (req, res, next) => {
     try {
-        const { status, sort } = req.query;
+        const { status, sort, q } = req.query;
 
         let statusArray = [];
         if (status) statusArray = status.split(',');
 
         const sortOrder = sort === 'asc' ? 1 : -1;
 
-        const result = await medicalRecordService.getAll(statusArray, sortOrder);
+        const result = await medicalRecordService.getAll(statusArray, sortOrder, q);
         res.status(StatusCodes.OK).json(result);
     } catch (error) {
         next(error);

@@ -76,7 +76,7 @@ const diagnosis = async (medicalRecordId, data, currentUser) => {
     return 'Chẩn đoán hồ sơ bệnh án thành công';
 };
 // Service lấy hồ sơ bệnh án theo filter
-const getAll = async (statusArray, sortOrder) => {
+const getAll = async (statusArray, sortOrder, q) => {
     // Loại bỏ các document đã bị xóa mềm
     const query = {
         _destroy: false,
@@ -94,8 +94,21 @@ const getAll = async (statusArray, sortOrder) => {
         })
         .sort({ createdAt: sortOrder });
 
+    let filteredRecords = medicalRecords;
+    if (q) {
+        const keyword = q.toLowerCase();
+
+        filteredRecords = medicalRecords.filter((record) => {
+            const patient = record.patientId;
+            return (
+                patient?.fullName?.toLowerCase().includes(keyword) ||
+                patient?.phoneNumber?.toLowerCase().includes(keyword)
+            );
+        });
+    }
+
     // Rename lại object thông tin bệnh nhân
-    return medicalRecords.map((record) => {
+    return filteredRecords.map((record) => {
         const obj = record.toObject();
 
         obj.patientInfo = obj.patientId;
@@ -106,8 +119,50 @@ const getAll = async (statusArray, sortOrder) => {
 };
 
 const getDetail = async (medicalRecordId) => {
-    const medicalRecord = await medicalRecordModel.findOneById(medicalRecordId);
+    // 1. TÌM BỆNH ÁN VÀ THÔNG TIN BỆNH NHÂN
+    let medicalRecord = await medicalRecordModel.MedicalRecordModel.findById(medicalRecordId).populate({
+        path: 'patientId',
+        select: '_id fullName gender birthYear phoneNumber avatar', // Lấy thông tin cần thiết
+    });
+
     if (!medicalRecord) throw new ApiError(StatusCodes.NOT_FOUND, 'Lấy hồ sơ thất bại');
+
+    // Chuyển sang plain object để dễ dàng thêm/sửa thuộc tính gửi cho Frontend
+    medicalRecord = medicalRecord.toObject();
+
+    // Đồng bộ tên biến patientInfo giống hàm getAll
+    if (medicalRecord.patientId) {
+        medicalRecord.patientInfo = medicalRecord.patientId;
+        delete medicalRecord.patientId;
+    }
+
+    // 2. TÌM KẾT QUẢ XÉT NGHIỆM (TEST RESULT) GẮN VÀO BỆNH ÁN
+    try {
+        let testResultData = null;
+
+        // Kịch bản A: Nếu Bệnh án có lưu sẵn testResultId hoặc mảng relatedLabOrderIds
+        if (medicalRecord.testResultId) {
+            testResultData = await testResultModel.findOneById(medicalRecord.testResultId);
+        } else if (medicalRecord.relatedLabOrderIds && medicalRecord.relatedLabOrderIds.length > 0) {
+            testResultData = await testResultModel.findOneById(medicalRecord.relatedLabOrderIds[0]);
+        }
+        // Kịch bản B: Tìm ngược từ bảng TestResult (Cách an toàn nhất)
+        // Dựa vào Swagger, TestResult lưu medicalRecordId bên trong nó
+        else if (testResultModel.TestResultModel) {
+            testResultData = await testResultModel.TestResultModel.findOne({
+                medicalRecordId: medicalRecordId,
+            }).sort({ createdAt: -1 }); // Lấy kết quả mới nhất nếu có nhiều cái
+        }
+
+        // Nếu tìm thấy kết quả từ phòng Lab, đắp nó vào biến testResult cho Frontend đọc
+        if (testResultData) {
+            medicalRecord.testResult = testResultData;
+        }
+    } catch (error) {
+        console.error('Lỗi khi đính kèm kết quả Lab vào Bệnh án:', error);
+        // Không throw error ở đây để tránh làm chết trang chi tiết nếu Lab bị lỗi
+    }
+
     return medicalRecord;
 };
 
