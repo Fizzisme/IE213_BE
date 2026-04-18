@@ -276,8 +276,8 @@ const receiveOrder = async (currentUser, labOrderId) => {
         throw new ApiError(StatusCodes.BAD_REQUEST, `Chỉ có thể tiếp nhận order ở trạng thái CONSENTED, hiện tại: ${labOrder.sampleStatus}`);
     }
 
-    // 🆕 Xác thực: Lab tech này được assign để làm order này
-    // 🆕 [Vấn đề 3] Xác thực: Lab tech này được assign để làm order này
+    // Xác thực: Lab tech này được assign để làm order này
+    // [Vấn đề 3] Xác thực: Lab tech này được assign để làm order này
     // Chi tiết: currentUser._id là ObjectId của user account, assignedLabTech cũng là ObjectId
     if (!labOrder.assignedLabTech || labOrder.assignedLabTech.toString() !== currentUser._id.toString()) {
         throw new ApiError(
@@ -287,7 +287,7 @@ const receiveOrder = async (currentUser, labOrderId) => {
         );
     }
 
-    // ✅ [HIGH FIX #3] Normalize wallet address
+    // [HIGH FIX #3] Normalize wallet address
     const normalizedLabTechWallet = normalizeWalletAddress(currentUser.walletAddress);
 
     const recordId = labOrder.blockchainRecordId;

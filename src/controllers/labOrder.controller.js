@@ -325,7 +325,7 @@ const cancelLabOrder = async (req, res, next) => {
     }
 };
 
-// [Vấn đề 3] Admin assign order cho lab tech
+// [Vấn đề 3] Doctor assign order cho lab tech
 const assignLabOrderToTech = async (req, res, next) => {
     try {
         const { labOrderId, labTechId } = req.body;
