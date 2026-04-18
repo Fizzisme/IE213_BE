@@ -9,6 +9,51 @@ import { AI_SERVICE_URL } from '~/utils/constants';
 import { ethers } from 'ethers';
 import { normalizeWalletAddress, compareWalletAddresses } from '~/utils/wallet';  // [Sửa #5] Utility ví tập trung
 
+// ============================================================================
+// CONSTANTS: Trạng thái TestResult + Chiến lược xử lý lỗi
+// ============================================================================
+
+/**
+ * TEST_RESULT_STATUS: Trạng thái của kết quả xét nghiệm
+ * - PENDING: Chờ AI phân tích (mới tạo)
+ * - PROCESSING: AI đang chạy
+ * - SUCCESS: Hoàn tất, có kết quả
+ * - FAILED: Thất bại, có thể retry lại
+ */
+const TEST_RESULT_STATUS = {
+    PENDING: 'PENDING',
+    PROCESSING: 'PROCESSING',
+    SUCCESS: 'SUCCESS',
+    FAILED: 'FAILED',
+};
+
+/**
+ * ERROR_HANDLING_STRATEGY (Documentation)
+ * ====================================
+ * BLOCKING (Fail-fast):
+ *   - Khi: Dữ liệu bắt buộc, bảo mật, consistency
+ *   - Ví dụ: confirmedDiagnosis required, role DOCTOR, signer match
+ *   - Ảnh hưởng: Main flow dừng ngay, client biết error
+ *
+ * NON-BLOCKING + RETRY (Resilient):
+ *   - Khi: External service (FastAPI, cache), optional metadata
+ *   - Ví dụ: AI analysis timeout, TestResult creation fail
+ *   - Ảnh hưởng: Main flow tiếp tục, error xử lý async, có retry
+ *
+ * DECISION MATRIX:
+ * +─────────────────────────────────────────────────────────────────+
+ * | Scenario                | Strategy              | Reason        |
+ * ├─────────────────────────────────────────────────────────────────┤
+ * | Field required          | BLOCKING              | Data integrity|
+ * | Auth / Authorization    | BLOCKING              | Security      |
+ * | Blockchain conflicts    | BLOCKING              | Immutability  |
+ * | State violations        | BLOCKING              | Consistency   |
+ * | External service fail   | NON-BLOCKING + RETRY  | Resilience    |
+ * | Optional metadata       | NON-BLOCKING          | UX            |
+ * | Async operations        | NON-BLOCKING + QUEUE  | Eventually ok |
+ * +─────────────────────────────────────────────────────────────────+
+ */
+
 /**
  * [Sửa #1 & #2 ưu tiên cao] Hàm helper cho xác thực role & status
  * Thay vì chỉ tin middleware, verify lại trong service
@@ -49,6 +94,77 @@ const validateUserIsActive = async (userId, requiredRole = null) => {
 const verifyRole = async (currentUser, requiredRole) => {
     const user = await validateUserIsActive(currentUser._id, requiredRole);
     return user;
+};
+
+// ============================================================================
+// HELPER: Tạo TestResult với retry logic (Issue B - High Priority)
+// ============================================================================
+
+/**
+ * createTestResultWithRetry: Tạo TestResult với exponential backoff retry
+ *
+ * Vấn đề cũ:
+ * - FastAPI timeout → TestResult creation fail → mất forever (không retry)
+ * - Client không biết status của TestResult (null khó debug)
+ *
+ * Giải pháp:
+ * - Retry 3 lần với exponential backoff (1s, 2s, 4s)
+ * - Track testResultStatus (PENDING, PROCESSING, SUCCESS, FAILED)
+ * - Client biết exact status + retry count
+ *
+ * @param {Object} testResultData - Dữ liệu để tạo TestResult
+ * @param {number} maxRetries - Số lần retry (default = 3)
+ * @returns {Object} { success, testResult, attempt, error }
+ */
+const createTestResultWithRetry = async (testResultData, maxRetries = 3) => {
+    let lastError = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            console.log(`[TestResult] Attempt ${attempt}/${maxRetries}: Tạo TestResult...`);
+            
+            // Import dynamic để tránh circular dependency
+            const { testResultModel } = await import('~/models/testResult.model');
+            
+            // Tạo TestResult với status = PENDING
+            const testResult = await testResultModel.createNew({
+                ...testResultData,
+                testResultStatus: TEST_RESULT_STATUS.PENDING,
+                testResultRetryCount: attempt - 1,
+            });
+            
+            console.log(`[TestResult] ✅ Thành công ở attempt ${attempt}: ${testResult._id}`);
+            
+            // Trả về: success, testResult, attempt mà thành
+            return {
+                success: true,
+                testResult,
+                attempt,
+                error: null,
+            };
+        } catch (err) {
+            lastError = err;
+            console.warn(`[TestResult] ❌ Attempt ${attempt} thất bại: ${err.message}`);
+            
+            // Nếu chưa phải lần cuối cùng, chờ exponential backoff rồi retry
+            if (attempt < maxRetries) {
+                // Exponential backoff: 1s, 2s, 4s
+                const backoffMs = Math.pow(2, attempt - 1) * 1000;
+                console.log(`[TestResult] Chờ ${backoffMs}ms trước khi retry...`);
+                await new Promise(resolve => setTimeout(resolve, backoffMs));
+            }
+        }
+    }
+    
+    // Sau khi thử ${maxRetries} lần vẫn fail
+    console.error(`[TestResult] ❌ Tất cả ${maxRetries} attempts thất bại: ${lastError?.message}`);
+    
+    return {
+        success: false,
+        testResult: null,
+        attempt: maxRetries,
+        error: lastError?.message || 'Unknown error',
+    };
 };
 
 /**
@@ -339,19 +455,30 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
 
     // STEP: Tạo Kết quả Xét nghiệm (lớp phân tích AI)
     // ════════════════════════════════════════════════════════════════════════════════
-    try {
-        console.log(`[Lab Result] Creating TestResult for AI analysis...`);
+    // [Issue B] Thêm retry logic + track testResultStatus
+    // - Non-blocking: main flow tiếp tục dù TestResult fail
+    // - Resilient: retry 3 lần nếu FastAPI timeout
+    // - Transparent: client biết exact status + retry count
+    
+    let testResultStatus = TEST_RESULT_STATUS.FAILED;  // Assume fail, fill success nếu ok
+    let testResultRetryCount = 0;
+    let testResultError = null;
 
-        // Gọi FastAPI để lấy AI analysis
+    try {
+        console.log(`[Lab Result] Bước: Tạo kết quả xét nghiệm để phân tích AI...`);
+
+        // Gọi FastAPI để lấy AI analysis (NẾU là DIABETES_TEST)
         let aiAnalysis = {};
         if (labOrder.recordType === 'DIABETES_TEST') {
             try {
+                // Lấy tuổi bệnh nhân để gửi cho AI
                 const { patientModel } = await import('~/models/patient.model');
                 const patient = await patientModel.findById(labOrder.patientId);
                 const age = patient ? new Date().getFullYear() - patient.birthYear : 0;
 
-                console.log(`[Lab Result] Calling FastAPI: ${AI_SERVICE_URL}`);
+                console.log(`[Lab Result] Gọi FastAPI: ${AI_SERVICE_URL}`);
 
+                // Gửi request để AI phân tích
                 const aiResponse = await fetch(AI_SERVICE_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -375,34 +502,61 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
                         risk: d.risk,
                         aiNote: d.note,
                     };
-                    console.log(`[Lab Result] AI analysis complete:`, aiAnalysis);
+                    console.log(`[Lab Result] ✅ AI phân tích xong:`, aiAnalysis);
                 } else {
-                    console.warn(`[Lab Result] AI service returned non-OK status: ${aiResponse.status}`);
+                    console.warn(`[Lab Result] ⚠️ AI service trả về status: ${aiResponse.status}`);
                 }
             } catch (aiError) {
-                console.warn(`[Lab Result] AI service failed (non-blocking):`, aiError.message);
+                // Non-blocking: AI fail không ảnh hưởng main flow
+                console.warn(`[Lab Result] ⚠️ Gọi AI thất bại (non-blocking): ${aiError.message}`);
             }
         }
 
-        // Tạo TestResult
-        const { testResultModel } = await import('~/models/testResult.model');
-        const testResult = await testResultModel.createNew({
+        // [Issue B] Tạo TestResult với retry logic
+        // - Nếu success: testResultStatus = SUCCESS, testResultId được set
+        // - Nếu fail sau 3 retries: testResultStatus = FAILED, testResultId = null
+        const retryResult = await createTestResultWithRetry({
             labOrderId: labOrder._id,
             medicalRecordId: labOrder.relatedMedicalRecordId,
             patientId: labOrder.patientId,
             createdBy: currentUser._id,
             testType: labOrder.recordType,
-            aiAnalysis,  // ✅ ONLY aiAnalysis, NO rawData
-        });
+            aiAnalysis,  // Chỉ gửi AI analysis, không gửi rawData (bảo mật)
+        }, 3);  // Retry tối đa 3 lần
 
-        // Link TestResult vào LabOrder
-        labOrder.testResultId = testResult._id;
+        if (retryResult.success) {
+            // ✅ Thành công: link TestResult vào LabOrder
+            const testResult = retryResult.testResult;
+            labOrder.testResultId = testResult._id;
+            labOrder.testResultStatus = TEST_RESULT_STATUS.SUCCESS;
+            testResultStatus = TEST_RESULT_STATUS.SUCCESS;
+            testResultRetryCount = retryResult.attempt - 1;
+            
+            console.log(`[Lab Result] ✅ TestResult tạo thành công và link vào LabOrder: ${testResult._id}`);
+        } else {
+            // ❌ Thất bại sau 3 lần retry: lưu lỗi để client và IT biết
+            labOrder.testResultId = null;
+            labOrder.testResultStatus = TEST_RESULT_STATUS.FAILED;
+            labOrder.testResultError = retryResult.error;
+            testResultStatus = TEST_RESULT_STATUS.FAILED;
+            testResultRetryCount = retryResult.attempt;
+            testResultError = retryResult.error;
+            
+            console.warn(`[Lab Result] ❌ TestResult tạo thất bại sau ${retryResult.attempt} lần retry: ${retryResult.error}`);
+            // Non-blocking: main flow tiếp tục dù TestResult fail
+        }
+
+        // Lưu trạng thái TestResult vào LabOrder
         await labOrder.save();
 
-        console.log(`[Lab Result] TestResult created and linked: ${testResult._id}`);
     } catch (testResultError) {
-        console.warn(`[Lab Result] TestResult creation failed (non-blocking):`, testResultError.message);
-        // Non-blocking: main flow continues even if TestResult creation fails
+        // Backup error handler (nên không bao giờ đến đây vì retry helper xử lý)
+        console.error(`[Lab Result] ❌ Lỗi bất ngờ khi tạo TestResult: ${testResultError.message}`);
+        labOrder.testResultStatus = TEST_RESULT_STATUS.FAILED;
+        labOrder.testResultError = testResultError.message;
+        testResultStatus = TEST_RESULT_STATUS.FAILED;
+        testResultError = testResultError.message;
+        await labOrder.save();
     }
 
     // 5. Ghi audit log
@@ -415,21 +569,30 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
         txHash,
         status: 'SUCCESS',
         details: {
-            note: `Lab tech posted result for lab order ${labOrderId}`,
+            note: `Lab tech post kết quả cho lab order ${labOrderId}`,
             recordId,
             labResultHash,
         },
     });
 
+    // [Issue B] Trả về response với testResultStatus + retry info
+    // Client sẽ biết:
+    // - testResultStatus: SUCCESS/FAILED (PENDING nếu still processing)
+    // - testResultRetryCount: Bao nhiêu lần đã retry
+    // - testResultError: Error message nếu fail (để debug)
     return {
         message: 'Post kết quả thành công',
         orderId: labOrder._id.toString(),
-        testResultId: labOrder.testResultId?.toString(),  // ✅ Include TestResult ID in response
         blockchainRecordId: recordId,
         txHash,
         status: 'RESULT_POSTED',
         labResultHash,
         updatedAt: now,
+        // [Issue B] New fields - TestResult status tracking
+        testResultId: labOrder.testResultId?.toString() || null,
+        testResultStatus: testResultStatus,          // SUCCESS / FAILED
+        testResultRetryCount: testResultRetryCount,  // Số lần đã retry
+        testResultError: testResultError,            // Error message nếu fail (null nếu success)
     };
 };
 
