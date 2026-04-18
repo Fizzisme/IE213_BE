@@ -434,195 +434,244 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
 };
 
 // Step 7: Bác sĩ thêm diễn giải lâm sàng
+// ============================================================================
+// HELPER FUNCTIONS: Clear, focused validation with specific error messages
+// ============================================================================
+
+/**
+ * Helper 1: Verify Doctor Role
+ * Kiểm tra: currentUser có role = DOCTOR?
+ * Error message: Cụ thể nếu không phải doctor
+ */
+const verifyDoctorRoleHelper = async (currentUser) => {
+    try {
+        await verifyRole(currentUser, 'DOCTOR');
+    } catch (err) {
+        throw new ApiError(
+            StatusCodes.FORBIDDEN,
+            `❌ Chỉ bác sĩ (DOCTOR) mới có thể thêm diễn giải lâm sàng. ` +
+            `Bạn hiện tại có role: ${currentUser.role || 'UNKNOWN'}. ` +
+            `Hãy liên hệ admin để cấp role DOCTOR.`
+        );
+    }
+};
+
+/**
+ * Helper 2: Verify Blockchain Doctor Registration
+ * Kiểm tra: Wallet có được đăng ký làm DOCTOR trên blockchain?
+ * Error message: Cụ thể wallet nào, cách fix
+ */
+const verifyBlockchainDoctorHelper = async (walletAddress) => {
+    const normalizedAddr = walletAddress.toLowerCase();
+    try {
+        const isDoctorOnChain = await blockchainContracts.read.accountManager.isDoctor(normalizedAddr);
+        if (!isDoctorOnChain) {
+            throw new ApiError(
+                StatusCodes.FORBIDDEN,
+                `Wallet ${normalizedAddr} chưa được đăng ký làm DOCTOR trên blockchain.\\n` +
+                `Cách fix:\\n` +
+                `1. Yêu cầu admin đăng ký wallet này trên blockchain\\n` +
+                `2. Hoặc dùng wallet khác đã được đăng ký\\n` +
+                `3. Sau đó logout → login lại`
+            );
+        }
+        console.log(`[Clinical Interpretation] ✅ Verified: Doctor ${normalizedAddr} is registered on blockchain`);
+    } catch (err) {
+        if (err.statusCode) throw err;
+        throw new ApiError(
+            StatusCodes.INTERNAL_SERVER_ERROR,
+            `Không thể kiểm tra blockchain registration: ${err.message}`
+        );
+    }
+};
+
+/**
+ * Helper 3: Verify Patient Access Grant
+ * Kiểm tra: Doctor có quyền truy cập bệnh nhân này với level yêu cầu?
+ * Error message: Cụ thể level hiện tại vs cần thiết, cách fix
+ */
+const verifyPatientAccessHelper = async (patientAddr, doctorAddr, requiredLevel) => {
+    const levelsMap = { 0: 'NONE', 1: 'EMERGENCY', 2: 'FULL', 3: 'SENSITIVE' };
+    try {
+        const hasAccess = await blockchainContracts.read.accessControl.checkAccessLevel(
+            patientAddr,
+            doctorAddr,
+            requiredLevel
+        );
+        if (!hasAccess) {
+            // Fetch current grant to show what level doctor has
+            let currentLevel = 0;
+            try {
+                const grant = await blockchainContracts.read.accessControl.getAccessGrant(
+                    patientAddr,
+                    doctorAddr
+                );
+                currentLevel = grant.level || 0;
+            } catch (e) {
+                console.warn('Could not fetch current access level');
+            }
+            throw new ApiError(
+                StatusCodes.FORBIDDEN,
+                `Bác sĩ ${doctorAddr} không có quyền truy cập đủ cho bệnh nhân ${patientAddr}.\\n` +
+                `Cấp độ hiện tại: ${levelsMap[currentLevel] || 'UNKNOWN'}\\n` +
+                `Cần tối thiểu: ${levelsMap[requiredLevel] || 'UNKNOWN'}\\n` +
+                `Cách fix:\\n` +
+                `1. Yêu cầu bệnh nhân cấp quyền truy cập qua mobile app\\n` +
+                `2. Hoặc admin có thể cấp quyền khẩn cấp\\n` +
+                `3. Chờ 1-2 phút rồi thử lại`
+            );
+        }
+        console.log(`[Clinical Interpretation] ✅ Verified: Access level ${levelsMap[requiredLevel]} granted for patient`);
+    } catch (err) {
+        if (err.statusCode) throw err;
+        throw new ApiError(
+            StatusCodes.INTERNAL_SERVER_ERROR,
+            `❌ Không thể kiểm tra quyền truy cập: ${err.message}`
+        );
+    }
+};
+
+/**
+ * Helper 4: Verify Signer Wallet Match (CRITICAL!)
+ * Kiểm tra: Blockchain signer có match currentUser wallet?
+ * Error message: Cụ thể 2 wallet, cách fix ngay
+ */
+const verifySignerMatchHelper = (signerAddress, expectedAddress) => {
+    const signerAddr = signerAddress?.toLowerCase();
+    const expectedAddr = expectedAddress?.toLowerCase();
+    if (signerAddr !== expectedAddr) {
+        throw new ApiError(
+            StatusCodes.UNAUTHORIZED,
+            `❌ WALLET MISMATCH - CRITICAL ERROR!\\n` +
+            `Blockchain signer: ${signerAddr || 'NOT AVAILABLE'}\\n` +
+            `Bạn đang login: ${expectedAddr}\\n\\n` +
+            `Nguyên nhân: Metamask wallet khác với hệ thống\\n` +
+            `Cách fix NGAY:\\n` +
+            `1. Logout khỏi hệ thống\\n` +
+            `2. Logout khỏi Metamask\\n` +
+            `3. Login lại Metamask với wallet: ${signerAddr || 'wallet chính xác'}\\n` +
+            `4. Login lại vào hệ thống\\n\\n` +
+            `Nếu vấn đề vẫn tồn tại, kiểm tra:\\n` +
+            `- Admin có chỉ định đúng doctor không?\\n` +
+            `- Hay liên hệ IT: [labOrderId + wallet của bạn]`
+        );
+    }
+    console.log(`[Clinical Interpretation] ✅ Verified: Signer match (${expectedAddr})`);
+};
+
+/**
+ * Helper 5: Execute Blockchain Call with Clear Error Handling
+ * Thực thi blockchain call, nếu fail thì lỗi cụ thể
+ * Error message: Blockchain revert reason nếu có
+ */
+const executeBlockchainCallHelper = async (doctorSigner, recordId, interpretationHash) => {
+    try {
+        console.log(`[Clinical Interpretation] Executing blockchain call...`);
+        const tx = await doctorSigner.addClinicalInterpretation(recordId, interpretationHash);
+        console.log(`[Clinical Interpretation] Waiting for blockchain confirmation...`);
+        const receipt = await tx.wait();
+        console.log(`[Clinical Interpretation] Blockchain confirmed - txHash: ${receipt.hash}`);
+        return {
+            txHash: receipt.hash,
+            blockNumber: receipt.blockNumber,
+        };
+    } catch (blockchainError) {
+        console.error(`[Clinical Interpretation] Blockchain execution failed:`, blockchainError.message);
+        throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            `Blockchain execution failed: ${blockchainError.message}. ` +
+            `Kiểm tra logs hoặc thử lại sau vài giây.`
+        );
+    }
+};
+
+// ============================================================================
+// MAIN FUNCTION: Clean, step-by-step flow
+// ============================================================================
+
 const addClinicalInterpretation = async (currentUser, labOrderId, interpretationData) => {
-    // [Sửa #1] Xác thực role = DOCTOR (dùng helper để đảm bảo nhất quán)
-    // [Sửa #2] Xác thực status = ACTIVE
-    await verifyRole(currentUser, 'DOCTOR');
+    console.log(`[Clinical Interpretation] Starting: labOrderId=${labOrderId}, doctor=${currentUser.walletAddress}`);
 
+    // Step 0: Validate input
     const { interpretation, recommendation, confirmedDiagnosis, interpreterNote } = interpretationData;
-
-    // ✅ REQUIRED: confirmedDiagnosis MUST be explicitly provided by doctor
-    // Tại sao: Chẩn đoán ban đầu (tại thời điểm tạo lab order) chỉ là một giả thuyết
-    // Chẩn đoán xác nhận (sau khi đọc lab results) có thể hoàn toàn khác
-    // Ví dụ:
-    //   - Ban đầu: E11 (Nghi ngờ Đái tháo đường tipo 2)
-    //   - Sau HbA1c 5.8%: Tiền tiểu đường (khác!)
-    //
-    // CHIẾN LƯỢC ĐIỂM TRƯỚC FRONTEND (KHÔNG tự động backend):
-    // Khi mở biểu mẫu "Thêm Diễn giải", frontend nên:
-    //   1. Lấy hồ sơ bệnh án cũ → lấy chẩn đoán có
-    //   2. Tự điền confirmedDiagnosis bằng giá trị này
-    //   3. Bác sĩ review và có thể sửa nếu cần
-    // Đảm bảo: bác sĩ xác minh mỗi chẩn đoán trước khi xác nhận
-    //
-    // Tương tự: Epic EHR, OpenMRS, các hệ thống sản xuất khác
     if (!confirmedDiagnosis) {
         throw new ApiError(
             StatusCodes.BAD_REQUEST,
-            'Field "confirmedDiagnosis" is REQUIRED. Doctor must explicitly confirm diagnosis after reviewing lab results. (Frontend should pre-fill from medical record.diagnosis for convenience)'
+            `Field "confirmedDiagnosis" bắt buộc. Bác sĩ phải xác nhận chẩn đoán sau khi review kết quả lab. ` +
+            `(Frontend nên pre-fill từ medical record.diagnosis để tiện lợi)`
         );
     }
 
+    // Step 1: Verify doctor role
+    console.log(`[Clinical Interpretation] Step 1: Verifying doctor role...`);
+    await verifyDoctorRoleHelper(currentUser);
+
+    // Step 2: Verify blockchain registration
+    const normalizedDoctorAddr = normalizeWalletAddress(currentUser.walletAddress);
+    console.log(`[Clinical Interpretation] Step 2: Verifying blockchain registration...`);
+    await verifyBlockchainDoctorHelper(normalizedDoctorAddr);
+
+    // Step 3: Load lab order
+    console.log(`[Clinical Interpretation] Step 3: Loading lab order...`);
     const labOrder = await labOrderModel.LabOrderModel.findById(labOrderId);
     if (!labOrder) {
-        throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy lab order');
+        throw new ApiError(StatusCodes.NOT_FOUND, `❌ Lab order không tồn tại: ${labOrderId}`);
     }
 
-    // 🆕 FIX: If requiredLevel missing (old orders), calculate and save it
+    // Step 4: Verify lab order status = RESULT_POSTED
+    if (labOrder.sampleStatus !== 'RESULT_POSTED') {
+        throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            `❌ Chỉ có thể thêm diễn giải khi lab result đã được post.\\n` +
+            `Status hiện tại: ${labOrder.sampleStatus}\\n` +
+            `Vui lòng chờ kỹ thuật viên post kết quả.`
+        );
+    }
+
+    const recordId = labOrder.blockchainRecordId;
+    if (!recordId) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, `❌ Lab order không có blockchainRecordId`);
+    }
+
+    // Auto-fix missing requiredLevel for old orders
     if (!labOrder.requiredLevel) {
-        const RECORD_TYPE_MAP = {
-            GENERAL: 0,
-            HIV_TEST: 1,
-            DIABETES_TEST: 2,
-            LAB_RESULT: 3,
-        };
         const calculatedLevel = labOrder.recordType === 'HIV_TEST' ? 3 : 2;
         labOrder.requiredLevel = calculatedLevel;
         await labOrder.save({ validateBeforeSave: false });
         console.log(`[Clinical Interpretation] ✅ Auto-fixed missing requiredLevel: ${calculatedLevel}`);
     }
 
-    // STATE VALIDATION: Only after results posted
-    if (labOrder.sampleStatus !== 'RESULT_POSTED') {
-        throw new ApiError(StatusCodes.BAD_REQUEST, `Chỉ có thể thêm diễn giải khi order ở trạng thái RESULT_POSTED, hiện tại: ${labOrder.sampleStatus}`);
-    }
+    // Step 5: Verify patient access grant
+    const normalizedPatientAddr = labOrder.patientAddress.toLowerCase();
+    const requiredLevelForCheck = labOrder.requiredLevel || 2;
+    console.log(`[Clinical Interpretation] Step 5: Verifying patient access (level ${requiredLevelForCheck})...`);
+    await verifyPatientAccessHelper(normalizedPatientAddr, normalizedDoctorAddr, requiredLevelForCheck);
 
-    const recordId = labOrder.blockchainRecordId;
-    if (!recordId) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Order không có blockchainRecordId');
-    }
+    // Step 6: Verify signer match (CRITICAL!)
+    console.log(`[Clinical Interpretation] Step 6: Verifying signer wallet match...`);
+    const doctorSigner = blockchainContracts.doctor.ehrManager;
+    verifySignerMatchHelper(doctorSigner.signer?.address, normalizedDoctorAddr);
 
-    // 1. Prepare interpretation metadata for storage
-    // [HIGH FIX #3] Normalize wallet address
-    const normalizedDoctorAddress = normalizeWalletAddress(currentUser.walletAddress);
-    const interpretationMetadata = {
-        interpretation,
-        recommendation,
-        confirmedDiagnosis,
-        doctor: normalizedDoctorAddress,
-        interpretedAt: new Date().toISOString(),
-    };
-
-    //  [MEDIUM FIX #6] Simplified: metadata stored in MongoDB
-    // MongoDB-only approach - no IPFS/Storacha
-    console.log(`[Clinical Interpretation] 💾 Storing interpretation metadata to MongoDB for order: ${recordId}`);
-
-    // 2. 🆕 Tính interpretationHash = keccak256(interpretation + recommendation) - Blockchain standard
-    // Using ethers.keccak256 (v6) instead of web3-utils
+    // Step 7: Calculate interpretation hash
     const interpretationHash = ethers.keccak256(
         ethers.toUtf8Bytes(interpretation + (recommendation || ''))
     );
+    console.log(`[Clinical Interpretation] Step 7: Calculated interpretationHash: ${interpretationHash}`);
 
-    // [CRITICAL FIX #1] Verify access control before blockchain call
-    const normalizedPatientAddr = labOrder.patientAddress.toLowerCase();
-    const normalizedDoctorAddr = currentUser.walletAddress.toLowerCase();
-    const requiredLevelForCheck = labOrder.requiredLevel || 2;
-
-    console.log(`[Clinical Interpretation] 🔐 Access check params:`);
-    console.log(`  Patient: ${normalizedPatientAddr}`);
-    console.log(`  Doctor: ${normalizedDoctorAddr}`);
-    console.log(`  Required Level: ${requiredLevelForCheck} (0=NONE, 1=EMERGENCY, 2=FULL, 3=SENSITIVE)`);
-    console.log(`  labOrder.requiredLevel from DB: ${labOrder.requiredLevel}`);
-    console.log(`  [DEBUG] AccessControl instance: ${blockchainContracts.read.accessControl.target}`);
-
-    try {
-        // Check if doctor is doctor on blockchain
-        const isDoctorOnChain = await blockchainContracts.read.accountManager.isDoctor(normalizedDoctorAddr);
-        console.log(`  Is doctor on blockchain? ${isDoctorOnChain}`);
-
-        const hasAccess = await blockchainContracts.read.accessControl.checkAccessLevel(
-            normalizedPatientAddr,
-            normalizedDoctorAddr,
-            requiredLevelForCheck
-        );
-        console.log(`  checkAccessLevel result: ${hasAccess}`);
-
-        if (!hasAccess) {
-            throw new ApiError(StatusCodes.FORBIDDEN, 'Doctor does not have access to this patient for clinical interpretation');
-        }
-    } catch (accessError) {
-        if (accessError.statusCode === StatusCodes.FORBIDDEN) throw accessError;
-        console.error(`[Clinical Interpretation] ⚠️ Access check error:`, accessError.message);
-        throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, `Access verification failed: ${accessError.message}`);
-    }
-
-    // 3. Gọi addClinicalInterpretation trên EHRManager (v4 optimization - interpretationIpfsHash stored off-chain)
-    // ✅ [CRITICAL FIX #2] Use doctor wallet (not admin) to sign interpretation - ensures accountability
+    // Step 8: Execute blockchain call
+    console.log(`[Clinical Interpretation] Step 8: Executing blockchain call...`);
     let txHash = null;
     let syncBlockNumber = null;
-
-    // 🆕 DEBUG: Log all parameters before blockchain call
-    console.log(`[Clinical Interpretation] DEBUG - Before blockchain call:`);
-    console.log(`  recordId: ${recordId}`);
-    console.log(`  interpretationHash: ${interpretationHash}`);
-    console.log(`  labOrder.sampleStatus: ${labOrder.sampleStatus}`);
-    console.log(`  labOrder.patientAddress: ${labOrder.patientAddress}`);
-    console.log(`  currentUser.walletAddress: ${currentUser.walletAddress}`);
-
     try {
-        //  DEBUG: Verify contract instances are the SAME
-        console.log(`[Clinical Interpretation]  DEBUG - CONTRACT INSTANCES:`);
-        console.log(`  READ ehrManager: ${blockchainContracts.read.ehrManager.target}`);
-        console.log(`  WRITE ehrManager (doctor): ${blockchainContracts.doctor.ehrManager.target}`);
-        console.log(`  Are they same? ${blockchainContracts.read.ehrManager.target === blockchainContracts.doctor.ehrManager.target ? '✅ YES' : '❌ NO'}`);
-
-        // 🆕 CRITICAL FIX: Use the CORRECT signer
-        // The blockchain transaction must be signed by the doctor whose wallet was used
-        // in the access grant. This MUST match the doctor's currentUser.walletAddress
-        const doctorSigner = blockchainContracts.doctor.ehrManager;
-
-        console.log(`[Clinical Interpretation] 🔐 Transaction Signer Address Check:`);
-        console.log(`  doctorSigner.signer.address: ${doctorSigner.signer?.address || 'NOT AVAILABLE'}`);
-        console.log(`  currentUser.walletAddress: ${normalizedDoctorAddr}`);
-        console.log(`  Match? ${doctorSigner.signer?.address?.toLowerCase() === normalizedDoctorAddr ? '✅ YES' : '❌ MISMATCH'}`);
-
-        if (doctorSigner.signer?.address?.toLowerCase() !== normalizedDoctorAddr) {
-            console.warn(`⚠️  WARNING: Transaction signer (${doctorSigner.signer?.address}) does not match current doctor (${normalizedDoctorAddr})`);
-            console.warn(`     This will cause blockchain AccessDenied error!`);
-            console.warn(`     Make sure doctor is logged in with wallet: ${doctorSigner.signer?.address}`);
-        }
-
-        const tx = await doctorSigner.addClinicalInterpretation(
-            recordId,
-            interpretationHash
-        );
-        console.log(`[Clinical Interpretation] Transaction sent, waiting for receipt...`);
-        const receipt = await tx.wait();
-        txHash = receipt.hash;
-        syncBlockNumber = receipt.blockNumber;
-        console.log(`[Clinical Interpretation] ✅ Blockchain call SUCCESS - txHash: ${txHash}`);
-    } catch (blockchainError) {
-        console.error(`[Clinical Interpretation] ❌ Blockchain error details:`);
-        console.error(`  Message: ${blockchainError.message}`);
-        console.error(`  Data: ${blockchainError.data}`);
-        console.error(`  Transaction data:`, blockchainError.transaction);
-
-        // 🆕 Try to get fresh access grant info to see current state
-        try {
-            console.log(`[Clinical Interpretation] ❌ DIAGNOSIS - Fetching current access grant state...`);
-            const blockchainRecord = await blockchainContracts.read.ehrManager.getRecord(recordId);
-            const freshGrant = await blockchainContracts.read.accessControl.getAccessGrant(
-                blockchainRecord.patient,
-                normalizedDoctorAddress
-            );
-            console.log(`  Fresh access grant for ${normalizedDoctorAddress}:`);
-            console.log(`    - isActive: ${freshGrant.isActive}`);
-            console.log(`    - expiresAt: ${BigInt(freshGrant.expiresAt).toString()}`);
-            console.log(`    - level: ${freshGrant.level}`);
-
-            const now = Math.floor(Date.now() / 1000);
-            if (freshGrant.expiresAt > 0n) {
-                console.log(`    - expires in: ${(Number(freshGrant.expiresAt) - now) / 3600} hours`);
-            }
-        } catch (diagErr) {
-            console.warn(`  Could not fetch diagnosis info:`, diagErr.message);
-        }
-
-        throw new ApiError(StatusCodes.BAD_REQUEST, `Gọi blockchain addClinicalInterpretation thất bại: ${blockchainError.message}`);
+        const result = await executeBlockchainCallHelper(doctorSigner, recordId, interpretationHash);
+        txHash = result.txHash;
+        syncBlockNumber = result.blockNumber;
+    } catch (err) {
+        throw err;
     }
 
-    // 4. CRITICAL: Update MongoDB status FIRST before async operations
-    // Ensure status is persisted to database immediately
+    // Step 9: Update MongoDB
+    console.log(`[Clinical Interpretation] Step 9: Updating MongoDB...`);
     const now = new Date();
     labOrder.sampleStatus = 'DOCTOR_REVIEWED';
     labOrder.interpretationHash = interpretationHash;
@@ -630,14 +679,12 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
     labOrder.recommendation = recommendation;
     labOrder.interpreterNote = interpreterNote;
     labOrder.doctorId = currentUser._id?.toString();
-    // 🔹 SNAPSHOT: Store doctor wallet snapshot for query optimization
-    labOrder.doctorWalletAddress = normalizedDoctorAddress;
-    // 🔐 PROOF: Store tx hash (source of truth - msg.sender embedded in blockchain)
+    labOrder.doctorWalletAddress = normalizedDoctorAddr;
     labOrder.txHash = txHash;
     labOrder.auditLogs.push({
         from: 'RESULT_POSTED',
         to: 'DOCTOR_REVIEWED',
-        by: normalizedDoctorAddress,
+        by: normalizedDoctorAddr,
         at: now,
         txHash,
     });
@@ -646,15 +693,17 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
         await labOrder.save();
         console.log(`[Clinical Interpretation] ✅ MongoDB status updated to DOCTOR_REVIEWED`);
     } catch (saveError) {
-        console.error(`[Clinical Interpretation] ❌ CRITICAL: Failed to persist status update to MongoDB:`, saveError.message);
-        throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, `Failed to save clinical interpretation status: ${saveError.message}`);
+        throw new ApiError(
+            StatusCodes.INTERNAL_SERVER_ERROR,
+            `❌ CRITICAL: Failed to save to database: ${saveError.message}`
+        );
     }
 
-    // 🆕 Ghi audit log trực tiếp với txHash (blockchain là authority)
+    // Step 10: Create audit log
     try {
         await auditLogModel.createLog({
             userId: currentUser._id,
-            walletAddress: normalizedDoctorAddress,
+            walletAddress: normalizedDoctorAddr,
             action: 'ADD_CLINICAL_INTERPRETATION',
             entityType: 'LAB_ORDER',
             entityId: labOrder._id,
@@ -673,7 +722,7 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
         console.error(`[Clinical Interpretation] Audit log failed (non-blocking):`, auditError.message);
     }
 
-    // STEP 7.5: AUTO-SYNC medical record with confirmed diagnosis
+    // Step 11: Auto-sync medical record with confirmed diagnosis
     let syncStatus = 'PENDING';
     if (labOrder.relatedMedicalRecordId) {
         try {
@@ -684,37 +733,19 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
                     confirmedDiagnosis,
                     interpretationHash,
                     doctorId: currentUser._id,
-                    // 🆕 NOTE: NO labOrderId needed here
+                    // NOTE: NO labOrderId needed here
                     // Relationship already created in Step 3 (Early Binding)
                 }
             );
             syncStatus = 'COMPLETED';
             console.log('✅ Medical record diagnosis synced successfully (relationship existed since Step 3)');
         } catch (syncErr) {
-            console.error('⚠️ Sync to medical record FAILED:', syncErr.message);
-            console.error('ℹ️ Will retry later - main flow remains valid');
+            console.error('Sync to medical record FAILED:', syncErr.message);
+            console.error('ℹWill retry later - main flow remains valid');
             syncStatus = 'FAILED_RETRY_LATER';
             // DON'T throw - don't fail main flow if sync fails
         }
     }
-
-    // 5. Ghi audit log
-    await auditLogModel.createLog({
-        userId: currentUser._id,
-        walletAddress: normalizedDoctorAddress,
-        action: 'ADD_CLINICAL_INTERPRETATION',
-        entityType: 'LAB_ORDER',
-        entityId: labOrder._id,
-        txHash,
-        status: 'SUCCESS',
-        details: {
-            note: `Doctor added clinical interpretation for lab order ${labOrderId}`,
-            recordId,
-            interpretationHash,
-            confirmedDiagnosis,
-            syncStatus,
-        },
-    });
 
     return {
         message: 'Thêm diễn giải lâm sàng thành công',
@@ -724,23 +755,23 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
         status: 'DOCTOR_REVIEWED',
         interpretationHash,
         confirmedDiagnosis,
-        syncStatus,  // 🆕 Tell client sync status
+        syncStatus,
         updatedAt: now,
     };
 };
 
 // Step 8: Bác sĩ chốt hồ sơ
 /**
- * 🎯 AFTER-COMPLETE ACCESS CONTROL ARCHITECTURE
+ * AFTER-COMPLETE ACCESS CONTROL ARCHITECTURE
  * ================================================
  * 
  * DECISION: Keep doctor access ACTIVE (no revoke)
  * 
  * RATIONALE:
- * ✅ Audit trail visibility: Doctor can view completed records for legal compliance
- * ✅ Follow-up care: Doctor may need to reference patient's diagnoses later
- * ✅ Medical continuity: Next encounter starts from COMPLETE record
- * ❌ Full revoke: Would break audit trail (lose access to proof)
+ * Audit trail visibility: Doctor can view completed records for legal compliance
+ * Follow-up care: Doctor may need to reference patient's diagnoses later
+ * Medical continuity: Next encounter starts from COMPLETE record
+ * Full revoke: Would break audit trail (lose access to proof)
  * 
  * SECURITY STRATEGY:
  * - Record.status = COMPLETE indicates "read-only" in UI
@@ -829,10 +860,10 @@ const completeRecord = async (currentUser, labOrderId) => {
     });
     await labOrder.save();
 
-    // 🔥 [STATE PROPAGATION] Sync Medical Record status when Lab Order COMPLETE
-    // ✅ Rule: Lab Order = source of truth
+    // [STATE PROPAGATION] Sync Medical Record status when Lab Order COMPLETE
+    // Rule: Lab Order = source of truth
     //    Medical Record = dependent (must follow)
-    // ✅ When Lab Order COMPLETE → Medical Record also COMPLETE
+    // When Lab Order COMPLETE → Medical Record also COMPLETE
     if (labOrder.relatedMedicalRecordId) {
         try {
             // [CENTRALIZED FIX] Use medicalRecordService.updateStatus() for consistent validation
