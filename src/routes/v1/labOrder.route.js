@@ -16,11 +16,21 @@ const Router = express.Router();
  *         - patientAddress
  *         - recordType
  *         - testsRequested
+ *         - medicalRecordId
+ *         - assignedLabTech
  *       properties:
  *         patientAddress:
  *           type: string
  *           description: Địa chỉ ví bệnh nhân (đã được bệnh nhân cấp quyền trước)
  *           example: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+ *         medicalRecordId:
+ *           type: string
+ *           description: ID của hồ sơ bệnh án (bác sĩ phải chỉ rõ hồ sơ nào lab order này thuộc về)
+ *           example: "6801a2b3c4d5e6f789012345"
+ *         assignedLabTech:
+ *           type: string
+ *           description: "ID của lab tech được chỉ định để làm xét nghiệm (MongoDB ObjectId của user LAB_TECH). 🆕 V3 Update: Doctor specifies lab tech when creating order"
+ *           example: "6801a2b3c4d5e6f789012346"
  *         recordType:
  *           type: string
  *           enum: [GENERAL, HIV_TEST, DIABETES_TEST, LAB_RESULT]
@@ -282,6 +292,12 @@ Router.patch('/:id/receive', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflo
  *                 message:
  *                   type: string
  *                   example: "Post kết quả thành công"
+ *                 orderId:
+ *                   type: string
+ *                   example: "6801a2b3c4d5e6f789012345"
+ *                 blockchainRecordId:
+ *                   type: string
+ *                   example: "0x123abc..."
  *                 txHash:
  *                   type: string
  *                   example: "0xabc123..."
@@ -292,6 +308,31 @@ Router.patch('/:id/receive', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflo
  *                   type: string
  *                   description: keccak256 hash của kết quả (lưu trên blockchain để verify)
  *                   example: "0xdef456..."
+ *                 updatedAt:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2026-04-18T15:30:45.123Z"
+ *                 testResultId:
+ *                   type: string
+ *                   description: MongoDB ID của test result được tạo (null nếu fail)
+ *                   example: "6801xyz789def..."
+ *                   nullable: true
+ *                 testResultStatus:
+ *                   type: string
+ *                   enum: [SUCCESS, FAILED, PENDING]
+ *                   description: Kết quả của quá trình retry tạo TestResult (Issue B fix)
+ *                   example: "SUCCESS"
+ *                 testResultRetryCount:
+ *                   type: integer
+ *                   minimum: 0
+ *                   maximum: 3
+ *                   description: Số lần đã retry khi tạo TestResult (exponential backoff 1s→2s→4s)
+ *                   example: 1
+ *                 testResultError:
+ *                   type: string
+ *                   description: Error message nếu TestResult fail sau 3 lần retry (null nếu success)
+ *                   example: null
+ *                   nullable: true
  *       400:
  *         description: Order không ở trạng thái IN_PROGRESS hoặc blockchain error
  *       403:
@@ -628,5 +669,80 @@ Router.delete('/:labOrderId', verifyToken, labOrderController.deleteLabOrder);
  *         description: Không thể hủy (status = COMPLETE hoặc CANCELLED)
  */
 Router.patch('/:labOrderId/cancel', verifyToken, labOrderController.cancelLabOrder);
+
+/**
+ * @swagger
+ * /v1/admin/lab-orders/assign:
+ *   post:
+ *     summary: Admin phân công order cho lab tech (Vấn đề 3 - Fix)
+ *     description: |
+ *       Admin phân công một lab order (status = CONSENTED) cho một lab tech cụ thể.
+ *       Lab tech sẽ chỉ thấy orders được phân công cho mình trong getLabOrders().
+ *       
+ *       **Dòng chảy:**
+ *       1. Patient consents (status=CONSENTED, assignedLabTech=null)
+ *       2. Admin calls this endpoint → set assignedLabTech = lab_tech_id
+ *       3. Lab tech logs in → GET /v1/lab-orders → sẽ thấy order này
+ *       4. Lab tech accepts order → status=IN_PROGRESS
+ *       5. Lab tech posts result → status=RESULT_POSTED
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - labOrderId
+ *               - labTechId
+ *             properties:
+ *               labOrderId:
+ *                 type: string
+ *                 description: MongoDB ID của lab order (CONSENTED status)
+ *                 example: "6801a2b3c4d5e6f789012345"
+ *               labTechId:
+ *                 type: string
+ *                 description: MongoDB ID của lab tech user (role=LAB_TECH, status=ACTIVE)
+ *                 example: "6851b2c3d4e5f6a789012365"
+ *     responses:
+ *       200:
+ *         description: Phân công thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Phân công order thành công"
+ *                 orderId:
+ *                   type: string
+ *                   example: "6801a2b3c4d5e6f789012345"
+ *                 assignedLabTech:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     name:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                   example:
+ *                     id: "6851b2c3d4e5f6a789012365"
+ *                     name: "Nguyễn Thị B"
+ *                     email: "lab_tech_b@example.com"
+ *                 sampleStatus:
+ *                   type: string
+ *                   example: "CONSENTED"
+ *       400:
+ *         description: Order không ở status CONSENTED hoặc lab tech không hợp lệ
+ *       403:
+ *         description: Chỉ ADMIN được phép
+ *       404:
+ *         description: Order hoặc lab tech không tìm thấy
+ */
+Router.post('/admin/assign', verifyToken, authorizeRoles('ADMIN'), labOrderController.assignLabOrderToTech);
 
 export const labOrderRoute = Router;

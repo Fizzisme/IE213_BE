@@ -93,6 +93,16 @@ const labOrderSchema = new mongoose.Schema(
             description: 'Wallet của doctor tại thời điểm interpret result (snapshot)',
         },
 
+        // [Vấn đề 3] Admin/Doctor phân công order cho lab tech
+        // assignedLabTech: ObjectId của lab tech được phân công (null nếu chưa assign)
+        assignedLabTech: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'users',
+            default: null,
+            index: true,
+            description: 'Lab tech được phân công cho order này (được set bởi admin/doctor khi patient consent)',
+        },
+
         // Lab data & interpretation (off-chain storage)
         labResultData: Object,
         labResultNote: String,

@@ -115,16 +115,18 @@ const createLabOrder = async (data, currentUser) => {
         clinicalNote,
         sampleType,
         diagnosisCode,
-        attachments // tùy chọn
+        attachments, // tùy chọn
+        assignedLabTech // Lab tech được doctor chỉ định để làm xét nghiệm (ObjectId của user LAB_TECH)
     } = data;
 
     // Bắt buộc: medicalRecordId PHẢI được cung cấp (quy tắc bảo mật)
     // Nguyên tắc: Không có hành vi bí ẩn/tự động cho dữ liệu y tế
-    if (!patientAddress || !recordType || !medicalRecordId) {
+    // 🆕 assignedLabTech PHẢI được cung cấp - doctor xác định ai sẽ làm xét nghiệm
+    if (!patientAddress || !recordType || !medicalRecordId || !assignedLabTech) {
         throw new ApiError(
             StatusCodes.BAD_REQUEST,
-            'Thiếu thông tin bắt buộc: patientAddress, recordType, medicalRecordId\n' +
-            'Bác sĩ phải chỉ rõ hồ sơ bệnh án để tạo lab order (không auto attach)'
+            'Thiếu thông tin bắt buộc: patientAddress, recordType, medicalRecordId, assignedLabTech\n' +
+            'Bác sĩ phải chỉ rõ: hồ sơ bệnh án + lab tech sẽ làm xét nghiệm'
         );
     }
 
@@ -214,6 +216,26 @@ const createLabOrder = async (data, currentUser) => {
     // 4. Xác định mức truy cập theo recordType
     // HIV_TEST -> SENSITIVE (3), các loại còn lại -> FULL (2)
     const requiredLevel = recordType === 'HIV_TEST' ? 3 : 2;
+
+    // 🆕 4.5. Xác thực lab tech được chỉ định
+    // Kiểm tra: lab tech tồn tại, role = LAB_TECH, status = ACTIVE
+    const labTech = await userModel.findById(assignedLabTech);
+    if (!labTech) {
+        throw new ApiError(StatusCodes.NOT_FOUND, `Không tìm thấy lab tech với ID: ${assignedLabTech}`);
+    }
+    if (labTech.role !== 'LAB_TECH') {
+        throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            `User ${assignedLabTech} không phải lab tech (role=${labTech.role})`
+        );
+    }
+    if (labTech.status !== 'ACTIVE') {
+        throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            `Lab tech ${labTech.name} không hoạt động (status=${labTech.status})`
+        );
+    }
+    console.log(`[Lab Order] ✅ Lab tech xác thực: ${labTech.name} (${assignedLabTech})`);
 
     // 5. Kiểm tra quyền truy cập từ blockchain
     // Bác sĩ chỉ có thể tạo order nếu bệnh nhân đã cấp quyền
@@ -358,6 +380,8 @@ const createLabOrder = async (data, currentUser) => {
         // [GHI CHÚC LỤC ĐỎ] Ghi đôi chiều: medicalRecordId được CẬP ĐỊNH bởi bác sĩ (đã xác thực)
         // ✅ NO auto-attach - Doctor must choose which record this lab belongs to
         relatedMedicalRecordId: medicalRecordId,  // Đã xác thực ở trên↑
+        // 🆕 assignedLabTech được doctor chỉ định (đã xác thực)
+        assignedLabTech: assignedLabTech,
         // Chỉ lưu MongoDB, không cần IPFS hash
         createdBy: normalizedCreatedBy,
         createdAt: new Date(),
@@ -481,7 +505,9 @@ const getLabOrders = async (currentUser, query) => {
         }
         console.log(`[getLabOrders] DOCTOR filter:`, filter);
     } else if (user.role === 'LAB_TECH') {
-        // Lab tech chỉ có thể truy vấn: CONSENTED, IN_PROGRESS, RESULT_POSTED, COMPLETE
+        // [Vấn đề 2] Lab tech chỉ xem orders được assign cho mình (không tự chọn)
+        // - Phải là orders được admin/doctor phân công (assignedLabTech = current user._id)
+        // - AND status phải là CONSENTED, IN_PROGRESS, RESULT_POSTED, hoặc COMPLETE
         const allowedStatuses = ['CONSENTED', 'IN_PROGRESS', 'RESULT_POSTED', 'COMPLETE'];
 
         if (status && !allowedStatuses.includes(status)) {
@@ -491,12 +517,19 @@ const getLabOrders = async (currentUser, query) => {
             );
         }
 
-        const statusToFilter = status || 'CONSENTED'; // Mặc định CONSENTED
-        filter.$or = [
-            { sampleStatus: statusToFilter },               // Orders với allowed status
-            { 'auditLogs.by': normalizedWalletAddress },   // ← Use normalized
-        ];
+        // Filter 1: Phải được assign cho user này
+        filter.assignedLabTech = currentUser._id;
+
+        // Filter 2: Nếu có status param, filter theo status
+        if (status) {
+            filter.sampleStatus = status;
+        } else {
+            // Mặc định filter: IN_PROGRESS hoặc RESULT_POSTED (orders đang làm)
+            filter.sampleStatus = { $in: ['IN_PROGRESS', 'RESULT_POSTED'] };
+        }
+
         console.log(`[getLabOrders] LAB_TECH filter:`, filter);
+        console.log(`[getLabOrders] LAB_TECH assigned to: ${currentUser._id}`);
     } else if (user.role === 'PATIENT') {
         // Bệnh nhân chỉ thấy order của mình
         filter.patientAddress = normalizedWalletAddress;  // ← Use normalized
@@ -705,11 +738,77 @@ const cancelLabOrder = async (labOrderId, reason = 'Hủy yêu cầu') => {
     }
 };
 
+// [Vấn đề 3] Admin assign order cho lab tech
+const assignLabOrderToTech = async (currentUser, labOrderId, labTechId) => {
+    // Xác thực: chỉ ADMIN được phép assign
+    await verifyRole(currentUser, 'ADMIN');
+
+    const labOrder = await labOrderModel.LabOrderModel.findById(labOrderId);
+    if (!labOrder) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy lab order');
+    }
+
+    // Kiểm tra: status phải là CONSENTED (chưa assign)
+    if (labOrder.sampleStatus !== 'CONSENTED') {
+        throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            `Chỉ có thể assign order ở trạng thái CONSENTED, hiện tại: ${labOrder.sampleStatus}`
+        );
+    }
+
+    // Xác thực: lab tech tồn tại
+    const labTech = await userModel.findById(labTechId);
+    if (!labTech) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy lab tech');
+    }
+
+    if (labTech.role !== 'LAB_TECH') {
+        throw new ApiError(StatusCodes.BAD_REQUEST, `User ${labTechId} không phải lab tech`);
+    }
+
+    if (labTech.status !== 'ACTIVE') {
+        throw new ApiError(StatusCodes.BAD_REQUEST, `Lab tech ${labTech.name} không hoạt động`);
+    }
+
+    // Assign order cho lab tech
+    labOrder.assignedLabTech = labTechId;
+    await labOrder.save();
+
+    // Ghi audit log
+    await auditLogModel.createLog({
+        userId: currentUser._id,
+        action: 'ASSIGN_LAB_ORDER',
+        entityType: 'LAB_ORDER',
+        entityId: labOrder._id,
+        status: 'SUCCESS',
+        details: {
+            note: `Admin assigned order ${labOrderId} to lab tech ${labTech.name}`,
+            assignedLabTechId: labTechId,
+            assignedLabTechName: labTech.name,
+        },
+    });
+
+    console.log(`[Lab Order] ✅ Assigned order ${labOrderId} to lab tech ${labTech.name}`);
+
+    return {
+        message: 'Phân công order thành công',
+        orderId: labOrder._id.toString(),
+        assignedLabTech: {
+            id: labTech._id.toString(),
+            name: labTech.name,
+            email: labTech.email,
+        },
+        sampleStatus: labOrder.sampleStatus,
+        updatedAt: new Date(),
+    };
+};
+
 export const labOrderService = {
     createLabOrder,
     getLabOrderDetail,
     getLabOrders,
     deleteLabOrder,
     cancelLabOrder,
+    assignLabOrderToTech,
 };
 

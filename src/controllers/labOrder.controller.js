@@ -325,10 +325,22 @@ const cancelLabOrder = async (req, res, next) => {
     }
 };
 
+// [Vấn đề 3] Admin assign order cho lab tech
+const assignLabOrderToTech = async (req, res, next) => {
+    try {
+        const { labOrderId, labTechId } = req.body;
+        const result = await labOrderService.assignLabOrderToTech(req.user, labOrderId, labTechId);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
 export const labOrderController = {
     createLabOrder,
     getLabOrderDetail,
     getLabOrders,
     deleteLabOrder,
     cancelLabOrder,
+    assignLabOrderToTech,
 };

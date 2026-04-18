@@ -276,6 +276,17 @@ const receiveOrder = async (currentUser, labOrderId) => {
         throw new ApiError(StatusCodes.BAD_REQUEST, `Chỉ có thể tiếp nhận order ở trạng thái CONSENTED, hiện tại: ${labOrder.sampleStatus}`);
     }
 
+    // 🆕 Xác thực: Lab tech này được assign để làm order này
+    // 🆕 [Vấn đề 3] Xác thực: Lab tech này được assign để làm order này
+    // Chi tiết: currentUser._id là ObjectId của user account, assignedLabTech cũng là ObjectId
+    if (!labOrder.assignedLabTech || labOrder.assignedLabTech.toString() !== currentUser._id.toString()) {
+        throw new ApiError(
+            StatusCodes.FORBIDDEN,
+            `Order ${labOrderId} không được assign cho bạn. ` +
+            `Chỉ lab tech được chỉ định bởi bác sĩ mới có thể tiếp nhận.`
+        );
+    }
+
     // ✅ [HIGH FIX #3] Normalize wallet address
     const normalizedLabTechWallet = normalizeWalletAddress(currentUser.walletAddress);
 
@@ -354,6 +365,21 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
     // Kiểm tra trạng thái phải là IN_PROGRESS
     if (labOrder.sampleStatus !== 'IN_PROGRESS') {
         throw new ApiError(StatusCodes.BAD_REQUEST, `Chỉ có thể post kết quả khi order ở trạng thái IN_PROGRESS, hiện tại: ${labOrder.sampleStatus}`);
+    }
+
+    // [Vấn đề 3] Kiểm tra: lab tech hiện tại phải là người được assign + đã receive order
+    if (!labOrder.assignedLabTech) {
+        throw new ApiError(
+            StatusCodes.FORBIDDEN,
+            `Order này chưa được assign. Hãy yêu cầu admin phân công order.`
+        );
+    }
+
+    if (labOrder.assignedLabTech.toString() !== currentUser._id.toString()) {
+        throw new ApiError(
+            StatusCodes.FORBIDDEN,
+            `Order này được assign cho lab tech khác. Bạn chỉ có thể post kết quả cho orders được phân công cho mình.`
+        );
     }
 
     // ✅ [HIGH FIX #3] Normalize wallet address
