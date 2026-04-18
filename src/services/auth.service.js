@@ -8,12 +8,38 @@ import { env } from '~/config/environment';
 import { JwtProvider } from '~/providers/JwtProvider';
 import { StatusCodes } from 'http-status-codes';
 import ApiError from '~/utils/ApiError';
+import { blockchainContracts } from '~/blockchain/contract';
 // Hàm đăng ký local
 const register = async (payload) => {
+    // ✅ VALIDATION: Require walletAddress for patient registration
+    if (!payload.walletAddress) {
+        throw new ApiError(StatusCodes.BAD_REQUEST,
+            'Wallet address is required for patient registration. Please provide a valid Ethereum wallet address.');
+    }
+
+    // ✅ VALIDATION: Validate wallet address format
+    if (!ethers.isAddress(payload.walletAddress)) {
+        throw new ApiError(StatusCodes.BAD_REQUEST,
+            'Invalid wallet address format. Expected 0x prefixed 40-character hex string.');
+    }
+
+    // ✅ VALIDATION: Prevent zero address
+    if (payload.walletAddress.toLowerCase() === '0x0000000000000000000000000000000000000000') {
+        throw new ApiError(StatusCodes.BAD_REQUEST,
+            'Cannot use zero address as wallet. Please provide a valid wallet address.');
+    }
+
     // Tìm người dùng trong DB
     const userExisted = await userModel.findByNationId(payload.nationId);
     // Nếu người dùng tồn tại thì ném ra lỗi
     if (userExisted) throw new ApiError(StatusCodes.NOT_ACCEPTABLE, 'Người dùng đã tồn tại');
+
+    // ✅ VALIDATION: Check if wallet already registered
+    const walletUser = await userModel.findByWalletAddress(payload.walletAddress);
+    if (walletUser) {
+        throw new ApiError(StatusCodes.CONFLICT,
+            'Wallet address is already registered. Please use a different wallet or contact support.');
+    }
 
     // Tạo người dùng
     const user = await userModel.createNew({
@@ -23,8 +49,13 @@ const register = async (payload) => {
                 nationId: payload.nationId,
                 email: payload.email,
                 passwordHash: bcrypt.hashSync(payload.password, 8),
+                walletAddress: payload.walletAddress, // ✅ Include wallet address
             },
         ].filter(Boolean),
+        blockchainAccount: {
+            status: 'PENDING', // ✅ Set initial blockchain status
+            registeredAt: new Date(),
+        },
     });
 
     // Tạo audit log
@@ -33,10 +64,16 @@ const register = async (payload) => {
         action: 'REGISTER_USER',
         entityType: 'USER',
         entityId: user._id,
+        details: {
+            walletAddress: payload.walletAddress,
+            note: 'User registered with wallet address',
+        },
     });
 
     return {
         userId: user._id,
+        walletAddress: payload.walletAddress,
+        blockchainStatus: 'PENDING', // ✅ Tell client they need admin approval
     };
 };
 
@@ -68,7 +105,7 @@ const verifyWalletLogin = async (walletAddress, signature) => {
     NONCE_STORE.delete(walletAddress.toLowerCase());
     let user = await userModel.findByWalletAddress(walletAddress);
     // Lần đầu đăng nhập thì tạo tài khoản qua wallet
-    if (!user)
+    if (!user) {
         user = await userModel.createNew({
             authProviders: [
                 walletAddress && {
@@ -77,6 +114,17 @@ const verifyWalletLogin = async (walletAddress, signature) => {
                 },
             ].filter(Boolean),
         });
+
+        // Gọi registerPatient() on-chain để đăng ký role PATIENT trên blockchain
+        try {
+            const tx = await blockchainContracts.admin.accountManager.registerPatient();
+            await tx.wait();
+        } catch (blockchainError) {
+            // Nếu gọi blockchain thất bại, vẫn cho phép đăng ký off-chain
+            // nhưng ghi log cảnh báo
+            console.error('Blockchain registerPatient failed:', blockchainError.message);
+        }
+    }
 
     await auditLogModel.createLog({
         userId: user._id,
@@ -104,10 +152,13 @@ const verifyWalletLogin = async (walletAddress, signature) => {
             throw new ApiError(StatusCodes.FORBIDDEN, 'Trạng thái tài khoản không hợp lệ');
     }
 
+    // ✅ Thêm walletAddress vào JWT (Cách 2: Hybrid approach)
+    // walletAddress là parameter của function - không cần khai báo lại
     // Tạo ra thông tin người dùng để mã hóa vào token
     const userInfo = {
         _id: user._id,
         role: user.role,
+        walletAddress: walletAddress,  // ← Dùng parameter trực tiếp
     };
     // Tạo ra 2 loại token
     const accessToken = await JwtProvider.generateToken(
@@ -139,7 +190,7 @@ const loginByNationId = async (data) => {
 
     // Tài khoản ADMIN phải đi qua route login admin riêng
     if (userExisted.role === userModel.USER_ROLES.ADMIN) {
-        throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản ADMIN vui lòng đăng nhập tại /v1/admin/auth/login');
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản ADMIN vui lòng đăng nhập tại /v1/admins/auth/login');
     }
 
     if (userExisted._destroy) {
@@ -171,10 +222,15 @@ const loginByNationId = async (data) => {
             throw new ApiError(StatusCodes.FORBIDDEN, 'Trạng thái tài khoản không hợp lệ');
     }
 
+    // ✅ Thêm walletAddress vào JWT (Cách 2: Hybrid approach)
+    // Lấy wallet từ authProviders nếu có (patient có thể có cả LOCAL + WALLET)
+    const walletAddress = userExisted.authProviders?.find(p => p.walletAddress)?.walletAddress;
+
     // Tạo ra thông tin người dùng để mã hóa vào token
     const userInfo = {
         _id: userExisted._id,
         role: userExisted.role,
+        walletAddress: walletAddress || null,  // ← Thêm walletAddress vào token
     };
     // Tạo ra 2 loại token
     const accessToken = await JwtProvider.generateToken(
@@ -196,9 +252,83 @@ const loginByNationId = async (data) => {
     };
 };
 
+/**
+ * Refresh access token using refresh token
+ * Used by POST /v1/auth/refresh-token endpoint
+ * 
+ * @param {string} refreshToken - Refresh token from cookie
+ * @returns {object} New accessToken + metadata
+ */
+const refreshAccessToken = async (refreshToken) => {
+    if (!refreshToken) {
+        throw new ApiError(StatusCodes.UNAUTHORIZED, 'Refresh token is required');
+    }
+
+    let decodedToken;
+    try {
+        decodedToken = await JwtProvider.verifyToken(
+            refreshToken,
+            env.REFRESH_TOKEN_SECRET_SIGNATURE,
+        );
+    } catch (error) {
+        throw new ApiError(
+            StatusCodes.UNAUTHORIZED,
+            'Refresh token is invalid or expired. Please login again.'
+        );
+    }
+
+    // Verify user still exists and is active
+    const user = await userModel.findById(decodedToken._id);
+    if (!user) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'User no longer exists');
+    }
+
+    if (user._destroy) {
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Account has been deleted');
+    }
+
+    if (user.status !== userModel.USER_STATUS.ACTIVE) {
+        throw new ApiError(
+            StatusCodes.FORBIDDEN,
+            `Account is ${user.status}. Please contact administrator.`
+        );
+    }
+
+    // Generate new accessToken (keep refreshToken unchanged)
+    const userInfo = {
+        _id: user._id,
+        role: user.role,
+        walletAddress: decodedToken.walletAddress, // Preserve wallet from original token
+    };
+
+    const newAccessToken = await JwtProvider.generateToken(
+        userInfo,
+        env.ACCESS_TOKEN_SECRET_SIGNATURE,
+        env.ACCESS_TOKEN_LIFE,
+    );
+
+    // Create audit log for token refresh
+    await auditLogModel.createLog({
+        userId: user._id,
+        action: 'REFRESH_TOKEN',
+        entityType: 'AUTH',
+        entityId: user._id,
+        details: {
+            newTokenIssuedAt: new Date(),
+        },
+    });
+
+    return {
+        accessToken: newAccessToken,
+        status: user.status,
+        expiresIn: env.ACCESS_TOKEN_LIFE,
+    };
+};
+
 export const authService = {
     register,
     loginByNationId,
     createWalletNonce,
     verifyWalletLogin,
+    refreshAccessToken,
 };

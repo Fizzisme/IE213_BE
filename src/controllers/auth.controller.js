@@ -81,10 +81,35 @@ const logout = async (req, res, next) => {
         next(error);
     }
 };
+// Hàm có tác dung refresh access token khi access token hết hạn (vẫn còn refresh token hợp lệ)
+const refreshAccessToken = async (req, res, next) => {
+    try {
+        const refreshToken = req.cookies?.refreshToken;
+        const result = await authService.refreshAccessToken(refreshToken);
+
+        // Set new accessToken cookie (refreshToken stays the same)
+        res.cookie('accessToken', result.accessToken, {
+            httpOnly: true,
+            secure: true,
+            sameSite: 'none',
+            maxAge: ms('20 minutes'),
+        });
+
+        return res.status(StatusCodes.OK).json({
+            accessToken: result.accessToken,
+            status: result.status,
+            expiresIn: result.expiresIn,
+            message: 'Access token refreshed successfully',
+        });
+    } catch (error) {
+        next(error);
+    }
+};
 
 export const authController = {
     register,
     loginByWallet,
     loginByNationId,
     logout,
+    refreshAccessToken,
 };

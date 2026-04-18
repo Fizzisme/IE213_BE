@@ -27,7 +27,7 @@ const approveUser = async (req, res, next) => {
     try {
         const result = await adminUserService.approveUser({
             targetUserId: req.params.id,
-            adminId: req.jwtDecoded._id,
+            adminId: req.user._id,
         });
         res.status(StatusCodes.OK).json(result);
     } catch (err) {
@@ -40,7 +40,7 @@ const rejectUser = async (req, res, next) => {
     try {
         const result = await adminUserService.rejectUser({
             targetUserId: req.params.id,
-            adminId: req.jwtDecoded._id,
+            adminId: req.user._id,
             reason: req.body.reason,
         });
         res.status(StatusCodes.OK).json(result);
@@ -54,7 +54,7 @@ const reReviewUser = async (req, res, next) => {
     try {
         const result = await adminUserService.reReviewUser({
             targetUserId: req.params.id,
-            adminId: req.jwtDecoded._id,
+            adminId: req.user._id,
         });
         res.status(StatusCodes.OK).json(result);
     } catch (err) {
@@ -66,18 +66,35 @@ const softDeleteUser = async (req, res, next) => {
     try {
         const result = await adminUserService.softDeleteUser({
             targetUserId: req.params.id,
-            adminId: req.jwtDecoded._id,
+            adminId: req.user._id,
         });
         res.status(StatusCodes.OK).json(result);
     } catch (err) {
         next(err);
     }
 };
+
+// PATCH /admin/users/:id/verify-id
+const verifyIdDocument = async (req, res, next) => {
+    try {
+        const result = await adminUserService.verifyIdDocument({
+            targetUserId: req.params.id,
+            adminId: req.user._id,
+            isVerified: req.body.isVerified,
+            notes: req.body.notes,
+        });
+        res.status(StatusCodes.OK).json(result);
+    } catch (err) {
+        next(err);
+    }
+};
+
 export const adminUserController = {
     getUsers,
     getUserDetail,
     approveUser,
     rejectUser,
     reReviewUser,
-    softDeleteUser
+    softDeleteUser,
+    verifyIdDocument,
 };

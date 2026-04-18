@@ -1,4 +1,6 @@
 import express from 'express';
+// Thêm dependencies vào
+import cookieParser from 'cookie-parser';
 import { env } from '~/config/environment';
 import { connectDB } from '~/config/mongodb';
 import { errorHandlingMiddleware } from '~/middlewares/errorHandlingMiddleware';
@@ -7,8 +9,31 @@ import cors from 'cors';
 import { WHITELIST_DOMAINS } from '~/utils/constants';
 import { responseInterceptor } from '~/middlewares/responseInterceptor';
 import swaggerUi from 'swagger-ui-express';
-import { swaggerSpec } from '~/config/swagger';
-import cookieParser from 'cookie-parser';
+import { swaggerSpec, setupSwagger } from '~/config/swagger';
+import http from 'http';
+
+const listenWithRetry = (app, host, startPort, maxRetries = 10) => {
+    let currentPort = Number(startPort);
+
+    const start = () => {
+        const server = http.createServer(app);
+
+        server.on('error', (error) => {
+            if (error.code === 'EADDRINUSE' && currentPort < Number(startPort) + maxRetries) {
+                console.warn(`Port ${currentPort} is in use, retrying on ${currentPort + 1}...`);
+                currentPort += 1;
+                return start();
+            }
+            throw error;
+        });
+
+        server.listen(currentPort, host, () => {
+            console.log(`Server is running at http://${host}:${currentPort}/`);
+        });
+    };
+
+    start();
+};
 
 // Hàm bắt đầu server
 const START_SERVER = async () => {
@@ -34,17 +59,16 @@ const START_SERVER = async () => {
     // Kết nối tới MongoDB
     await connectDB();
 
+    // Tạo 1 swagger
+    setupSwagger(app);
+
     // Format lại api response
     app.use(responseInterceptor);
 
-    // Sử dụng để lấy biến được lưu trong cookie
     app.use(cookieParser());
-
     // Sử dụng APIs_V1
     app.use('/v1', APIs_V1);
 
-    // Tạo 1 swagger
-    app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
     // Middleware xử lý lỗi tập trung
     app.use(errorHandlingMiddleware);
@@ -56,9 +80,7 @@ const START_SERVER = async () => {
         res.end('<h1>Hello World!</h1><hr>');
     });
 
-    app.listen(PORT, HOST, () => {
-        console.log(`✅ Server is running at http://${HOST}:${PORT}/`);
-    });
+    listenWithRetry(app, HOST, PORT);
 };
 
 START_SERVER();

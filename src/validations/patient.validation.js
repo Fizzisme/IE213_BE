@@ -1,17 +1,10 @@
 import { z } from 'zod';
 import { zodValidate } from '~/utils/zodValidate';
-// Tạo Schema createPatient
+
+// Patient profile ONLY includes: gender, birthYear
+// fullName, phoneNumber are in User model
 const createPatientSchema = z.object({
-    phoneNumber: z
-        .string()
-        .min(8)
-        .max(15)
-        .regex(/^(0|\+84)(3|5|7|8|9)[0-9]{8}$/, 'Số điện thoại không hợp lệ'),
-
-    fullName: z.string().min(2),
-
-    gender: z.enum(['M', 'F']).optional(),
-
+    gender: z.enum(['M', 'F']),
     dob: z.number(),
 });
 

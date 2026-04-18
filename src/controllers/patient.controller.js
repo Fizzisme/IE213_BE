@@ -39,4 +39,29 @@ const getMyProfile = async (req, res, next) => {
     }
 };
 
-export const patientController = { createPatient, getAll, getPatientById, getMyProfile };
+const getMyLabOrders = async (req, res, next) => {
+    try {
+        const result = await patientService.getMyLabOrders(req.user, req.query);
+        res.status(StatusCodes.OK).json(result);
+    } catch (err) {
+        next(err);
+    }
+};
+
+const getMyMedicalRecords = async (req, res, next) => {
+    try {
+        const result = await patientService.getMyMedicalRecords(req.user);
+        res.status(StatusCodes.OK).json(result);
+    } catch (err) {
+        next(err);
+    }
+};
+
+export const patientController = {
+    createPatient,
+    getAll,
+    getPatientById,
+    getMyProfile,
+    getMyLabOrders,
+    getMyMedicalRecords,
+};

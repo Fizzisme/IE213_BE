@@ -1,0 +1,477 @@
+{
+    "info": {
+        "name": "EHR Project - API Collection",
+        "description": "Comprehensive API collection for EHR project testing",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "🔐 Authentication",
+            "item": [
+                {
+                    "name": "Register Patient",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"{{TEST_EMAIL}}\",\n  \"password\": \"{{TEST_PASSWORD}}\",\n  \"nationId\": \"{{PATIENT_NATION_ID}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}{{API_VERSION}}/auth/register",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "{{API_VERSION}}",
+                                "auth",
+                                "register"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Login by NationId",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"nationId\": \"{{PATIENT_NATION_ID}}\",\n  \"password\": \"{{TEST_PASSWORD}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}{{API_VERSION}}/auth/login/nationId",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "{{API_VERSION}}",
+                                "auth",
+                                "login",
+                                "nationId"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "if (pm.response.code === 200) {",
+                                    "    var data = pm.response.json();",
+                                    "    pm.environment.set('ACCESS_TOKEN', data.accessToken);",
+                                    "    pm.environment.set('REFRESH_TOKEN', data.refreshToken);",
+                                    "    pm.environment.set('CURRENT_USER_ID', data.user._id);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Login by Wallet - Phase 1 (Get Nonce)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"walletAddress\": \"{{CURRENT_WALLET_ADDRESS}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}{{API_VERSION}}/auth/login/wallet",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "{{API_VERSION}}",
+                                "auth",
+                                "login",
+                                "wallet"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Login by Wallet - Phase 2 (Verify)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"walletAddress\": \"{{CURRENT_WALLET_ADDRESS}}\",\n  \"signature\": \"0x...\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}{{API_VERSION}}/auth/login/wallet",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "{{API_VERSION}}",
+                                "auth",
+                                "login",
+                                "wallet"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Logout",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{BASE_URL}}{{API_VERSION}}/auth/logout",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "{{API_VERSION}}",
+                                "auth",
+                                "logout"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "👤 Patient",
+            "item": [
+                {
+                    "name": "Create Patient Profile",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{ACCESS_TOKEN}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"fullName\": \"{{PATIENT_NAME}}\",\n  \"dateOfBirth\": \"{{PATIENT_DOB}}\",\n  \"gender\": \"MALE\",\n  \"phone\": \"{{PATIENT_PHONE}}\",\n  \"address\": \"{{PATIENT_ADDRESS}}\",\n  \"medicalHistory\": \"No known allergies\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}{{API_VERSION}}/patients",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "{{API_VERSION}}",
+                                "patients"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "if (pm.response.code === 201) {",
+                                    "    var data = pm.response.json();",
+                                    "    pm.environment.set('PATIENT_ID', data.patientId || data._id);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Get Patient Details",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{ACCESS_TOKEN}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{BASE_URL}}{{API_VERSION}}/patients",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "{{API_VERSION}}",
+                                "patients"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "📋 Lab Order",
+            "item": [
+                {
+                    "name": "Create Lab Order (ORDERED)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{ACCESS_TOKEN}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"patientAddress\": \"{{PATIENT_WALLET_ADDRESS}}\",\n  \"recordType\": \"{{RECORD_TYPE}}\",\n  \"testsRequested\": [\n    {\n      \"code\": \"GLUCOSE\",\n      \"name\": \"Glucose Test\",\n      \"note\": \"Fasting glucose measurement\"\n    }\n  ],\n  \"priority\": \"normal\",\n  \"clinicalNote\": \"{{CLINICAL_NOTE}}\",\n  \"sampleType\": \"{{SAMPLE_TYPE}}\",\n  \"diagnosisCode\": \"{{DIAGNOSIS_CODE}}\",\n  \"diagnosisName\": \"{{DIAGNOSIS_NAME}}\",\n  \"patientId\": \"{{PATIENT_ID}}\",\n  \"patientName\": \"{{PATIENT_NAME}}\",\n  \"patientDOB\": \"{{PATIENT_DOB}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}{{API_VERSION}}/lab-orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "{{API_VERSION}}",
+                                "lab-orders"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "if (pm.response.code === 201) {",
+                                    "    var data = pm.response.json();",
+                                    "    pm.environment.set('LAB_ORDER_ID', data.labOrderId);",
+                                    "    pm.environment.set('BLOCKCHAIN_RECORD_ID', data.recordId);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Get Lab Order Details",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{ACCESS_TOKEN}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{BASE_URL}}{{API_VERSION}}/lab-orders/{{LAB_ORDER_ID}}",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "{{API_VERSION}}",
+                                "lab-orders",
+                                "{{LAB_ORDER_ID}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Lab Orders List",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{ACCESS_TOKEN}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{BASE_URL}}{{API_VERSION}}/lab-orders?page=1&limit=10",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "{{API_VERSION}}",
+                                "lab-orders"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "10"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🔄 Workflow",
+            "item": [
+                {
+                    "name": "Step 1: Patient Consents (CONSENTED)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{ACCESS_TOKEN}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"labOrderId\": \"{{LAB_ORDER_ID}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}{{API_VERSION}}/ehr-workflow/consent",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "{{API_VERSION}}",
+                                "ehr-workflow",
+                                "consent"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Step 2: Lab Tech Receives (IN_PROGRESS)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{ACCESS_TOKEN}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"labOrderId\": \"{{LAB_ORDER_ID}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}{{API_VERSION}}/ehr-workflow/receive-order",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "{{API_VERSION}}",
+                                "ehr-workflow",
+                                "receive-order"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Step 3: Lab Tech Posts Result (RESULT_POSTED)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{ACCESS_TOKEN}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"labOrderId\": \"{{LAB_ORDER_ID}}\",\n  \"resultData\": {\n    \"rawData\": {\n      \"glucose\": 95,\n      \"unit\": \"mg/dL\",\n      \"normalRange\": \"70-100\"\n    },\n    \"note\": \"{{LAB_RESULT_NOTE}}\"\n  }\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}{{API_VERSION}}/ehr-workflow/post-result",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "{{API_VERSION}}",
+                                "ehr-workflow",
+                                "post-result"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Step 4: Doctor Interprets (DOCTOR_REVIEWED)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{ACCESS_TOKEN}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"labOrderId\": \"{{LAB_ORDER_ID}}\",\n  \"interpretationData\": {\n    \"interpretation\": \"{{CLINICAL_INTERPRETATION}}\",\n    \"recommendation\": \"{{RECOMMENDATION}}\"\n  }\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}{{API_VERSION}}/ehr-workflow/add-interpretation",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "{{API_VERSION}}",
+                                "ehr-workflow",
+                                "add-interpretation"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Step 5: Doctor Completes (COMPLETE)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{ACCESS_TOKEN}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"labOrderId\": \"{{LAB_ORDER_ID}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}{{API_VERSION}}/ehr-workflow/complete\",\n              \"host\": [\n                \"{{BASE_URL}}\"\n              ],\n              \"path\": [\n                \"{{API_VERSION}}\",\n                \"ehr-workflow\",\n                \"complete\"\n              ]\n            }\n          }\n        }\n      ]\n    },\n    {\n      \"name\": \"🔐 Access Control\",\n      \"item\": [\n        {\n          \"name\": \"Grant Access to Doctor\",\n          \"request\": {\n            \"method\": \"POST\",\n            \"header\": [\n              {\n                \"key\": \"Authorization\",\n                \"value\": \"Bearer {{ACCESS_TOKEN}}\"\n              },\n              {\n                \"key\": \"Content-Type\",\n                \"value\": \"application/json\"\n              }\n            ],\n            \"body\": {\n              \"mode\": \"raw\",\n              \"raw\": \"{\\n  \\\"accessor\\\": \\\"{{DOCTOR_WALLET_ADDRESS}}\\\",\\n  \\\"level\\\": \\\"FULL\\\",\\n  \\\"durationHours\\\": 24\\n}\"\n            },\n            \"url\": {\n              \"raw\": \"{{BASE_URL}}{{API_VERSION}}/access-control/grant\",\n              \"host\": [\n                \"{{BASE_URL}}\"\n              ],\n              \"path\": [\n                \"{{API_VERSION}}\",\n                \"access-control\",\n                \"grant\"\n              ]\n            }\n          }\n        },\n        {\n          \"name\": \"Revoke Access\",\n          \"request\": {\n            \"method\": \"DELETE\",\n            \"header\": [\n              {\n                \"key\": \"Authorization\",\n                \"value\": \"Bearer {{ACCESS_TOKEN}}\"\n              },\n              {\n                \"key\": \"Content-Type\",\n                \"value\": \"application/json\"\n              }\n            ],\n            \"body\": {\n              \"mode\": \"raw\",\n              \"raw\": \"{\\n  \\\"accessor\\\": \\\"{{DOCTOR_WALLET_ADDRESS}}\\\"\\n}\"\n            },\n            \"url\": {\n              \"raw\": \"{{BASE_URL}}{{API_VERSION}}/access-control/revoke\",\n              \"host\": [\n                \"{{BASE_URL}}\"\n              ],\n              \"path\": [\n                \"{{API_VERSION}}\",\n                \"access-control\",\n                \"revoke\"\n              ]\n            }\n          }\n        }\n      ]\n    },\n    {\n      \"name\": \"🏥 Blockchain\",\n      \"item\": [\n        {\n          \"name\": \"Check Blockchain Health\",\n          \"request\": {\n            \"method\": \"GET\",\n            \"header\": [],\n            \"url\": {\n              \"raw\": \"{{BASE_URL}}{{API_VERSION}}/blockchain/health\",\n              \"host\": [\n                \"{{BASE_URL}}\"\n              ],\n              \"path\": [\n                \"{{API_VERSION}}\",\n                \"blockchain\",\n                \"health\"\n              ]\n            }\n          }\n        }\n      ]\n    }\n  ]\n}\n

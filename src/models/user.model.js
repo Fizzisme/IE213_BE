@@ -48,6 +48,22 @@ const userSchema = new mongoose.Schema(
             validate: [(v) => v.length > 0, 'authProviders is required'],
         },
 
+        // User Profile Fields (basic identity)
+        fullName: {
+            type: String,
+            default: null,
+            trim: true,
+        },
+        phone: {
+            type: String,
+            default: null,
+        },
+        avatar: {
+            type: String,
+            default: null,
+            description: 'URL to avatar image',
+        },
+
         role: {
             type: String,
             enum: Object.values(USER_ROLES),
@@ -83,6 +99,51 @@ const userSchema = new mongoose.Schema(
         rejectionReason: {
             type: String,
             default: null,
+        },
+
+        // CMND/Căn cước công nhân verification fields
+        idVerified: {
+            type: Boolean,
+            default: false,
+            index: true,
+            description: 'Admin đã verify số CMND/CCCD hay chưa',
+        },
+        idVerificationNotes: {
+            type: String,
+            default: null,
+            description: 'Ghi chú khi admin verify CMND (hợp lệ/không hợp lệ)',
+        },
+        idVerifiedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: COLLECTION_NAME,
+            default: null,
+            description: 'Admin user id đã verify',
+        },
+        idVerifiedAt: {
+            type: Date,
+            default: null,
+        },
+
+        // Blockchain account tracking
+        blockchainAccount: {
+            status: {
+                type: String,
+                enum: ['NONE', 'PENDING', 'ACTIVE', 'REJECTED'],
+                default: 'NONE',
+            },
+            registeredAt: {
+                type: Date,
+                default: null,
+            },
+            txHash: {
+                type: String,
+                default: null,
+                index: true,
+            },
+            approvalTx: {
+                type: String,
+                default: null,
+            },
         },
     },
     {

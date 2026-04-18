@@ -4,10 +4,10 @@ import { adminAuthValidation } from '~/validations/adminAuth.validation';
 
 const Router = express.Router();
 
-// POST /v1/admin/auth/login
+// POST /v1/admins/auth/login
 /**
  * @swagger
- * /v1/admin/auth/login:
+ * /v1/admins/auth/login:
  *   post:
  *     summary: Admin login (separate secure endpoint)
  *     tags: [Admin Auth]

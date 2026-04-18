@@ -1,67 +1,85 @@
+// ═════════════════════════════════════════════════════════════════════════════════
+// ADMIN SERVICE - PRIVILEGED OPERATIONS ONLY
+// ═════════════════════════════════════════════════════════════════════════════════
+// 
+// This service handles ADMIN-ONLY privileged operations:
+// ✅ createDoctor - Admin directly creates doctor accounts (no PENDING approval)
+// ✅ createLabTech - Admin directly creates lab tech accounts (no PENDING approval)
+// ✅ registerPatientBlockchain - Admin registers patients on blockchain
+//
+// NOTE: User management functions (approve, reject, verify, soft-delete) are in
+// adminUserService.js - this follows separation of concerns principle
+// ═════════════════════════════════════════════════════════════════════════════════
+
 import { userModel } from '~/models/user.model';
 import { auditLogModel } from '~/models/auditLog.model';
 import { StatusCodes } from 'http-status-codes';
-import { patientModel } from '~/models/patient.model';
 import { doctorModel } from '~/models/doctor.model';
+import { labTechModel } from '~/models/labTech.model';
+import bcrypt from 'bcrypt';
 import ApiError from '~/utils/ApiError';
-// lấy ra toàn bộ user tồn tại
-const getUsers = async ({ status, page, limit, deleted }) => {
-    if (deleted) {
-        return await userModel.findDeleted({ page, limit });
-    }
-    return await userModel.findByStatus({ status, page, limit });
-};
+import { blockchainContracts } from '~/blockchain/contract';
 
-// Xem chi tiết 1 user
-const getUserDetail = async (userId) => {
-    const user = await userModel.findDetailById(userId);
-    if (!user) throw new ApiError(StatusCodes.NOT_FOUND, 'User không tồn tại');
-    return user;
-};
-
-// Duyệt user → ACTIVE
-const approveUser = async ({ targetUserId, adminId }) => {
-    const user = await userModel.findById(targetUserId);
-    if (!user) throw new ApiError(StatusCodes.NOT_FOUND, 'User không tồn tại');
-
-    // Chỉ duyệt được user đang PENDING
-    if (user.status !== userModel.USER_STATUS.PENDING) {
-        throw new ApiError(StatusCodes.CONFLICT, `Không thể duyệt user ở trạng thái ${user.status}`);
+/**
+ * createDoctor - Admin tạo Doctor (Direct)
+ * Creates doctor account directly with ACTIVE status (no PENDING approval)
+ */
+const createDoctor = async ({ email, password, nationId, walletAddress, adminId }) => {
+    // Kiểm tra email đã tồn tại
+    const existingUser = await userModel.UserModel.findOne({
+        'authProviders.email': email,
+        _destroy: false
+    });
+    if (existingUser) {
+        throw new ApiError(StatusCodes.CONFLICT, 'Email đã tồn tại');
     }
 
-    // Cập nhật status → ACTIVE
-    await userModel.updateById(targetUserId, {
+    // Tạo user với role DOCTOR + status ACTIVE
+    const authProviders = [
+        {
+            type: 'LOCAL',
+            email: email,
+            passwordHash: bcrypt.hashSync(password, 8),
+            nationId: nationId,
+        },
+    ];
+
+    if (walletAddress) {
+        authProviders.push({
+            type: 'WALLET',
+            walletAddress: walletAddress,
+        });
+    }
+
+    const newUser = await userModel.createNew({
+        email: email,
+        authProviders: authProviders,
+        role: userModel.USER_ROLES.DOCTOR,
         status: userModel.USER_STATUS.ACTIVE,
         approvedAt: new Date(),
         approvedBy: adminId,
     });
 
-    // Ghi audit log
-    await auditLogModel.createLog({
-        userId: adminId,
-        action: 'ADMIN_OVERRIDE',
-        entityType: 'USER',
-        entityId: targetUserId,
-        details: { note: `Admin approved user ${targetUserId}` },
-    });
-
-    return 'Người dùng được duyệt thành công';
-};
-
-// Từ chối user → REJECTED
-const rejectUser = async ({ targetUserId, adminId, reason }) => {
-    const user = await userModel.findById(targetUserId);
-    if (!user) throw new ApiError(StatusCodes.NOT_FOUND, 'User không tồn tại');
-    console.log(user);
-    // Chỉ từ chối được user đang PENDING
-    if (user.status !== userModel.USER_STATUS.PENDING) {
-        throw new ApiError(StatusCodes.CONFLICT, `Không thể từ chối user ở trạng thái ${user.status}`);
+    // Gọi addDoctor() on-chain - Optional, không fail request nếu blockchain call fail
+    if (walletAddress) {
+        try {
+            const tx = await blockchainContracts.admin.accountManager.addDoctor(walletAddress);
+            await tx.wait();
+            console.log('✅ Blockchain addDoctor success:', tx.hash);
+        } catch (blockchainError) {
+            // Log warning nhưng không throw error - user vẫn được tạo
+            console.warn('⚠️ Blockchain addDoctor warning:', blockchainError.message);
+        }
     }
 
-    // Cập nhật status → REJECTED
-    await userModel.updateById(targetUserId, {
-        status: userModel.USER_STATUS.REJECTED,
-        rejectionReason: reason,
+    // Tạo doctor profile
+    const doctorData = await doctorModel.DoctorModel.create({
+        userId: newUser._id,
+        fullName: email.split('@')[0], // Dùng phần trước @ của email làm fullName tạm thời
+        email: email,
+        specialization: 'General',
+        licenseNumber: '',
+        status: 'ACTIVE',
     });
 
     // Ghi audit log
@@ -69,75 +87,141 @@ const rejectUser = async ({ targetUserId, adminId, reason }) => {
         userId: adminId,
         action: 'ADMIN_OVERRIDE',
         entityType: 'USER',
-        entityId: targetUserId,
-        details: { note: `Admin rejected user ${targetUserId}. Reason: ${reason}` },
+        entityId: newUser._id,
+        details: { note: `Admin created DOCTOR account: ${email}`, walletAddress },
     });
 
-    return 'Người dùng bị từ chối';
+    return {
+        userId: newUser._id,
+        email: email,
+        role: userModel.USER_ROLES.DOCTOR,
+        status: userModel.USER_STATUS.ACTIVE,
+    };
 };
 
-// Phục hồi user REJECTED → PENDING (cho phép xét duyệt lại)
-const reReviewUser = async ({ targetUserId, adminId }) => {
-    const user = await userModel.findById(targetUserId);
-    if (!user) throw new ApiError(StatusCodes.NOT_FOUND, 'User không tồn tại');
-
-    if (user.status !== userModel.USER_STATUS.REJECTED) {
-        throw new ApiError(
-            StatusCodes.CONFLICT,
-            `Chỉ có thể phục hồi user ở trạng thái REJECTED, hiện tại: ${user.status}`,
-        );
+// Admin tạo Lab Tech (Direct)
+const createLabTech = async ({ email, password, nationId, walletAddress, adminId }) => {
+    // Kiểm tra email đã tồn tại
+    const existingUser = await userModel.UserModel.findOne({
+        'authProviders.email': email,
+        _destroy: false
+    });
+    if (existingUser) {
+        throw new ApiError(StatusCodes.CONFLICT, 'Email đã tồn tại');
     }
 
-    await userModel.updateById(targetUserId, {
-        status: userModel.USER_STATUS.PENDING,
+    // Tạo user với role LAB_TECH + status ACTIVE
+    const authProviders = [
+        {
+            type: 'LOCAL',
+            email: email,
+            passwordHash: bcrypt.hashSync(password, 8),
+            nationId: nationId,
+        },
+    ];
+
+    if (walletAddress) {
+        authProviders.push({
+            type: 'WALLET',
+            walletAddress: walletAddress,
+        });
+    }
+
+    const newUser = await userModel.createNew({
+        email: email,
+        authProviders: authProviders,
+        role: userModel.USER_ROLES.LAB_TECH,
+        status: userModel.USER_STATUS.ACTIVE,
+        approvedAt: new Date(),
+        approvedBy: adminId,
     });
 
+    // Gọi addLabTech() on-chain - Optional, không fail request nếu blockchain call fail
+    if (walletAddress) {
+        try {
+            const tx = await blockchainContracts.admin.accountManager.addLabTech(walletAddress);
+            await tx.wait();
+            console.log('✅ Blockchain addLabTech success:', tx.hash);
+        } catch (blockchainError) {
+            // Log warning nhưng không throw error - user vẫn được tạo
+            console.warn('⚠️ Blockchain addLabTech warning:', blockchainError.message);
+        }
+    }
+
+    // Tạo lab tech profile
+    const labTechData = await labTechModel.LabTechModel.create({
+        userId: newUser._id,
+        fullName: email.split('@')[0], // Dùng phần trước @ của email làm fullName tạm thời
+        gender: 'M', // Mặc định, có thể cập nhật sau
+        specialization: [],
+        department: '',
+    });
+
+    // Ghi audit log
     await auditLogModel.createLog({
         userId: adminId,
         action: 'ADMIN_OVERRIDE',
         entityType: 'USER',
-        entityId: targetUserId,
-        details: { note: `Admin re-reviewed user ${targetUserId} (REJECTED → PENDING)` },
+        entityId: newUser._id,
+        details: { note: `Admin created LAB_TECH account: ${email}`, walletAddress },
     });
 
-    return 'User đã được chuyển về trạng thái chờ duyệt';
+    return {
+        userId: newUser._id,
+        email: email,
+        role: userModel.USER_ROLES.LAB_TECH,
+        status: userModel.USER_STATUS.ACTIVE,
+    };
 };
 
-// Thêm hàm softDeleteUser để admin có thể softdelete 1 user trong hệ thống
-const softDeleteUser = async ({ targetUserId, adminId }) => {
-    const user = await userModel.findById(targetUserId);
-    if (!user) throw new ApiError(StatusCodes.NOT_FOUND, 'User không tồn tại');
-    if (user._destroy) throw new ApiError(StatusCodes.CONFLICT, 'User đã bị xóa trước đó');
-
-    await userModel.softDelete(targetUserId);
-
-    switch (user.role) {
-        case userModel.USER_ROLES.PATIENT: {
-            await patientModel.softDeleteByUserId(targetUserId);
-            break;
-        }
-        case userModel.USER_ROLES.DOCTOR: {
-            await doctorModel.softDeleteByUserId(targetUserId);
-            break;
-        }
+// Admin register patient on blockchain
+const registerPatientBlockchain = async ({ patientUserId, adminId }) => {
+    // Lấy patient user từ DB
+    const patientUser = await userModel.findById(patientUserId);
+    if (!patientUser) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Patient user không tồn tại');
     }
 
+    // Kiểm tra role
+    if (patientUser.role !== userModel.USER_ROLES.PATIENT) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'User này không phải PATIENT');
+    }
+
+    // Lấy wallet address (từ authProviders)
+    const walletAddress = patientUser.authProviders?.find(p => p.walletAddress)?.walletAddress;
+    if (!walletAddress) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Patient không có wallet address');
+    }
+
+    // Gọi registerPatient on-chain - Optional, không fail request nếu blockchain call fail
+    try {
+        const tx = await blockchainContracts.admin.accountManager.registerPatient(walletAddress);
+        await tx.wait();
+        console.log('✅ Blockchain registerPatient success:', tx.hash);
+    } catch (blockchainError) {
+        // Log warning nhưng không throw error
+        console.warn('⚠️ Blockchain registerPatient warning:', blockchainError.message);
+        throw new ApiError(StatusCodes.BAD_REQUEST, `Register patient on blockchain failed: ${blockchainError.message}`);
+    }
+
+    // Ghi audit log
     await auditLogModel.createLog({
         userId: adminId,
         action: 'ADMIN_OVERRIDE',
         entityType: 'USER',
-        entityId: targetUserId,
-        details: { note: `Admin soft-deleted user ${targetUserId} (role: ${user.role})` },
+        entityId: patientUserId,
+        details: { note: `Admin registered patient on blockchain: ${walletAddress}`, walletAddress },
     });
 
-    return `User ${targetUserId} đã bị xóa`;
+    return {
+        message: 'Patient successfully registered on blockchain',
+        userId: patientUserId,
+        walletAddress: walletAddress,
+    };
 };
 
 export const adminService = {
-    getUsers,
-    getUserDetail,
-    approveUser,
-    rejectUser,
-    reReviewUser,
-    softDeleteUser,
+    createDoctor,
+    createLabTech,
+    registerPatientBlockchain,
 };

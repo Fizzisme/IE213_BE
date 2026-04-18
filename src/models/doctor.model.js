@@ -7,15 +7,10 @@ const doctorSchema = new mongoose.Schema(
     {
         userId: {
             type: mongoose.Schema.Types.ObjectId,
+            ref: 'users',
             required: true,
             unique: true,
             index: true,
-        },
-
-        fullName: {
-            type: String,
-            required: true,
-            trim: true,
         },
 
         specialization: {
@@ -29,11 +24,6 @@ const doctorSchema = new mongoose.Schema(
         },
 
         licenseNumber: {
-            type: String,
-            default: null,
-        },
-
-        email: {
             type: String,
             default: null,
         },
@@ -57,10 +47,9 @@ const doctorSchema = new mongoose.Schema(
 );
 
 doctorSchema.index({ specialization: 1 });
-doctorSchema.index({ status: 1 });
 
 const DoctorModel = mongoose.model(COLLECTION_NAME, doctorSchema);
-// softDeleteByUserId dùng để soft delete cho doctor
+
 const softDeleteByUserId = async (userId) => {
     return await DoctorModel.findOneAndUpdate(
         { userId, deletedAt: null },

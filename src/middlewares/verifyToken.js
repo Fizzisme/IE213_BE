@@ -16,14 +16,13 @@ export const verifyToken = async (req, res, next) => {
             throw new ApiError(StatusCodes.UNAUTHORIZED, 'Unauthorized: Token not found');
         }
 
-        // Verify token và gán vào req.jwtDecoded
+        // ✅ [MEDIUM FIX #4] Verify token và gán vào req.user (standardized JWT extraction)
         const decoded = await JwtProvider.verifyToken(
             accessToken,
             env.ACCESS_TOKEN_SECRET_SIGNATURE,
         );
 
-        req.jwtDecoded = decoded;
-        // Gán req.user để các middleware khác (authorizeRoles) sử dụng được
+        // Gán req.user để tất cả các middleware và controller sử dụng được (single source of truth)
         req.user = decoded;
 
         next();

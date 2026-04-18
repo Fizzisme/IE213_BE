@@ -10,17 +10,6 @@ const labTechSchema = new mongoose.Schema(
             required: true,
             unique: true,
         },
-        fullName: {
-            type: String,
-            required: true,
-            minlength: 2,
-        },
-
-        gender: {
-            type: String,
-            enum: ['M', 'F'],
-            required: true,
-        },
 
         specialization: {
             type: [String],
@@ -36,6 +25,7 @@ const labTechSchema = new mongoose.Schema(
             type: Date,
             default: null,
         },
+
         department: {
             type: String,
             default: null,
@@ -45,10 +35,7 @@ const labTechSchema = new mongoose.Schema(
             type: Boolean,
             default: false,
         },
-        lastLoginAt: {
-            type: Date,
-            default: null,
-        },
+
         _destroy: {
             type: Boolean,
             default: false,
@@ -67,5 +54,6 @@ const findOneByUserId = async (userId) => {
 };
 
 export const labTechModel = {
+    LabTechModel,
     findOneByUserId,
 };

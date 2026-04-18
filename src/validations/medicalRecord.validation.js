@@ -6,30 +6,37 @@ import { paramsValidate } from '~/utils/paramsValidate';
 // Validate body
 
 const createSchema = z.object({
-    type: z.enum(['DIABETES_TEST']),
-    note: z
+    chief_complaint: z
         .string()
         .trim()
-        .max(500, 'Ghi chú không dài quá 500 từ')
-        .optional(),
-});
+        .min(5, 'Triệu chứng chính phải ít nhất 5 ký tự')
+        .max(1000, 'Triệu chứng chính không dài quá 1000 ký tự'),
+    // FLEXIBLE VITAL SIGNS - Accept any object with vital signs (REQUIRED)
+    // Examples: {temperature: 37.5, blood_pressure: "120/80", heart_rate: 72, SpO2: 98}
+    vital_signs: z.record(z.string(), z.unknown()),
 
-const diagnosisSchema = z.object({
-    testResultId: z.string(),
-    note: z
+    // FLEXIBLE PHYSICAL EXAM - Accept any object with exam findings
+    // Examples: {chest: "Clear", abdomen: "Soft", ...}
+    physical_exam: z.record(z.string(), z.unknown()).optional(),
+
+    assessment: z
         .string()
         .trim()
-        .max(500, 'Ghi chú không dài quá 500 từ')
+        .max(1000, 'Đánh giá không dài quá 1000 ký tự')
         .optional(),
+    plan: z
+        .array(z.string())
+        .optional(),
+    // 🆕 Initial diagnosis based on physical exam (optional - doctor can add or skip)
     diagnosis: z
         .string()
         .trim()
-        .min(1, 'Bắt buộc chuẩn đoán')
-        .max(1000, 'Chuẩn đoán quá dài'),
+        .min(5, 'Chẩn đoán phải ít nhất 5 ký tự')
+        .max(1000, 'Chẩn đoán không dài quá 1000 ký tự')
+        .optional(),
 });
 
 const createNew = zodValidate(createSchema);
-const diagnosis = zodValidate(diagnosisSchema);
 
 // Validate params
 
@@ -41,6 +48,5 @@ const medicalRecordId = paramsValidate(medicalRecordIdSchema);
 
 export const medicalRecordValidation = {
     createNew,
-    diagnosis,
     medicalRecordId,
 };

@@ -5,4 +5,6 @@ export const WHITELIST_DOMAINS = [
     'http://localhost:5173',
 ];
 
+export const AI_SERVICE_URL = 'https://fizz09092005-ie213.hf.space/predict';
+
 export const objectIdRegex = /^[0-9a-fA-F]{24}$/;
