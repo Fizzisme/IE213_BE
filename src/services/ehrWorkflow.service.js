@@ -133,7 +133,7 @@ const createTestResultWithRetry = async (testResultData, maxRetries = 3) => {
                 testResultRetryCount: attempt - 1,
             });
             
-            console.log(`[TestResult] ✅ Thành công ở attempt ${attempt}: ${testResult._id}`);
+            console.log(`[TestResult] Thành công ở attempt ${attempt}: ${testResult._id}`);
             
             // Trả về: success, testResult, attempt mà thành
             return {
@@ -144,7 +144,7 @@ const createTestResultWithRetry = async (testResultData, maxRetries = 3) => {
             };
         } catch (err) {
             lastError = err;
-            console.warn(`[TestResult] ❌ Attempt ${attempt} thất bại: ${err.message}`);
+            console.warn(`[TestResult] Attempt ${attempt} thất bại: ${err.message}`);
             
             // Nếu chưa phải lần cuối cùng, chờ exponential backoff rồi retry
             if (attempt < maxRetries) {
@@ -157,7 +157,7 @@ const createTestResultWithRetry = async (testResultData, maxRetries = 3) => {
     }
     
     // Sau khi thử ${maxRetries} lần vẫn fail
-    console.error(`[TestResult] ❌ Tất cả ${maxRetries} attempts thất bại: ${lastError?.message}`);
+    console.error(`[TestResult] Tất cả ${maxRetries} attempts thất bại: ${lastError?.message}`);
     
     return {
         success: false,
@@ -502,13 +502,13 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
                         risk: d.risk,
                         aiNote: d.note,
                     };
-                    console.log(`[Lab Result] ✅ AI phân tích xong:`, aiAnalysis);
+                    console.log(`[Lab Result] AI phân tích xong:`, aiAnalysis);
                 } else {
-                    console.warn(`[Lab Result] ⚠️ AI service trả về status: ${aiResponse.status}`);
+                    console.warn(`[Lab Result] AI service trả về status: ${aiResponse.status}`);
                 }
             } catch (aiError) {
                 // Non-blocking: AI fail không ảnh hưởng main flow
-                console.warn(`[Lab Result] ⚠️ Gọi AI thất bại (non-blocking): ${aiError.message}`);
+                console.warn(`[Lab Result] Gọi AI thất bại (non-blocking): ${aiError.message}`);
             }
         }
 
@@ -525,16 +525,16 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
         }, 3);  // Retry tối đa 3 lần
 
         if (retryResult.success) {
-            // ✅ Thành công: link TestResult vào LabOrder
+            // Thành công: link TestResult vào LabOrder
             const testResult = retryResult.testResult;
             labOrder.testResultId = testResult._id;
             labOrder.testResultStatus = TEST_RESULT_STATUS.SUCCESS;
             testResultStatus = TEST_RESULT_STATUS.SUCCESS;
             testResultRetryCount = retryResult.attempt - 1;
             
-            console.log(`[Lab Result] ✅ TestResult tạo thành công và link vào LabOrder: ${testResult._id}`);
+            console.log(`[Lab Result] TestResult tạo thành công và link vào LabOrder: ${testResult._id}`);
         } else {
-            // ❌ Thất bại sau 3 lần retry: lưu lỗi để client và IT biết
+            // Thất bại sau 3 lần retry: lưu lỗi để client và IT biết
             labOrder.testResultId = null;
             labOrder.testResultStatus = TEST_RESULT_STATUS.FAILED;
             labOrder.testResultError = retryResult.error;
@@ -551,7 +551,7 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
 
     } catch (testResultError) {
         // Backup error handler (nên không bao giờ đến đây vì retry helper xử lý)
-        console.error(`[Lab Result] ❌ Lỗi bất ngờ khi tạo TestResult: ${testResultError.message}`);
+        console.error(`[Lab Result] Lỗi bất ngờ khi tạo TestResult: ${testResultError.message}`);
         labOrder.testResultStatus = TEST_RESULT_STATUS.FAILED;
         labOrder.testResultError = testResultError.message;
         testResultStatus = TEST_RESULT_STATUS.FAILED;
@@ -638,7 +638,7 @@ const verifyBlockchainDoctorHelper = async (walletAddress) => {
                 `3. Sau đó logout → login lại`
             );
         }
-        console.log(`[Clinical Interpretation] ✅ Verified: Doctor ${normalizedAddr} is registered on blockchain`);
+        console.log(`[Clinical Interpretation] Verified: Doctor ${normalizedAddr} is registered on blockchain`);
     } catch (err) {
         if (err.statusCode) throw err;
         throw new ApiError(
