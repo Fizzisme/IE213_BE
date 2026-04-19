@@ -8,6 +8,7 @@ import { medicalRecordService } from '~/services/medicalRecord.service';
 import { AI_SERVICE_URL } from '~/utils/constants';
 import { ethers } from 'ethers';
 import { normalizeWalletAddress, compareWalletAddresses } from '~/utils/wallet';  // [Sửa #5] Utility ví tập trung
+import * as metaMaskTxBuilder from '~/utils/metaMaskTxBuilder'; // MetaMask unsigned tx builder
 
 // ============================================================================
 // CONSTANTS: Trạng thái TestResult + Chiến lược xử lý lỗi
@@ -75,7 +76,7 @@ const validateUserIsActive = async (userId, requiredRole = null) => {
     if (user.status !== 'ACTIVE') {
         throw new ApiError(
             StatusCodes.FORBIDDEN,
-            `Your account is ${user.status}. Only ACTIVE users can perform this action`
+            `Tài khoản user của bạn là ${user.status}. Chỉ các user ACTIVE mới có thể thực hiện hành động này`
         );
     }
 
@@ -83,7 +84,7 @@ const validateUserIsActive = async (userId, requiredRole = null) => {
     if (requiredRole && user.role !== requiredRole) {
         throw new ApiError(
             StatusCodes.FORBIDDEN,
-            `Only ${requiredRole} can perform this action. Your role: ${user.role}`
+            `Chỉ ${requiredRole} mới có thể thực hiện hành động này. Role của bạn: ${user.role}`
         );
     }
 
@@ -257,6 +258,196 @@ const consentToOrder = async (currentUser, labOrderId) => {
         txHash,
         status: 'CONSENTED',
         updatedAt: now,
+    };
+};
+
+// ============================================================================
+// METAMASK FLOW: Step 4 - Patient xác nhận đồng ý (Refactored for MetaMask)
+// ============================================================================
+
+/**
+ * Step 4a: PREPARE CONSENT TX (GET /lab-orders/:id/prepare-consent)
+ * 
+ * Frontend calls this to get unsigned transaction for MetaMask signing
+ * 
+ * Returns: { unsignedTx, gasEstimate, estimatedCostEther, nonce, chainId }
+ */
+const prepareConsentToOrderTx = async (currentUser, labOrderId) => {
+    // [Sửa #1] Xác thực role = PATIENT
+    // [Sửa #2] Xác thực status = ACTIVE
+    await verifyRole(currentUser, 'PATIENT');
+
+    // Tìm lab order trong MongoDB
+    const labOrder = await labOrderModel.LabOrderModel.findById(labOrderId);
+    if (!labOrder) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy lab order');
+    }
+
+    // [Sửa #3] Chuẩn hóa địa chỉ ví trước so sánh
+    const normalizedPatientAddress = normalizeWalletAddress(labOrder.patientAddress);
+    const normalizedUserWallet = normalizeWalletAddress(currentUser.walletAddress);
+
+    // Kiểm tra bệnh nhân sở hữu order này
+    if (normalizedPatientAddress !== normalizedUserWallet) {
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Bạn không có quyền xác nhận order này');
+    }
+
+    // Kiểm tra trạng thái hiện tại phải là ORDERED
+    if (labOrder.sampleStatus !== 'ORDERED') {
+        throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            `Chỉ có thể xác nhận order ở trạng thái ORDERED, hiện tại: ${labOrder.sampleStatus}`
+        );
+    }
+
+    const recordId = labOrder.blockchainRecordId;
+    if (!recordId) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Order không có blockchainRecordId');
+    }
+
+    // Prepare unsigned transaction using metaMaskTxBuilder
+    console.log(`[prepareConsentToOrderTx] Preparing unsigned tx for patient: ${normalizedUserWallet}, recordId: ${recordId}`);
+
+    const txData = await metaMaskTxBuilder.prepareConsentTx(
+        normalizedPatientAddress,
+        recordId
+    );
+
+    console.log(`[prepareConsentToOrderTx] ✅ Unsigned tx prepared successfully`);
+
+    return {
+        success: true,
+        data: txData,
+    };
+};
+
+/**
+ * Step 4b: CONFIRM CONSENT TX (PATCH /lab-orders/:id/consent/confirm)
+ * 
+ * Frontend calls this AFTER signing with MetaMask
+ * Body: { txHash }
+ * 
+ * This function:
+ * 1. Verifies txHash exists on blockchain
+ * 2. Extracts msg.sender from transaction
+ * 3. Verifies msg.sender matches current user
+ * 4. Updates MongoDB with new status = CONSENTED
+ * 5. Logs audit trail
+ */
+const confirmConsentToOrder = async (currentUser, labOrderId, txHash) => {
+    // [Sửa #1] Xác thực role = PATIENT
+    // [Sửa #2] Xác thực status = ACTIVE
+    await verifyRole(currentUser, 'PATIENT');
+
+    // Validate txHash format
+    if (!txHash || !ethers.isHexString(txHash, 32)) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid transaction hash format');
+    }
+
+    // Tìm lab order trong MongoDB
+    const labOrder = await labOrderModel.LabOrderModel.findById(labOrderId);
+    if (!labOrder) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy lab order');
+    }
+
+    // [Sửa #3] Chuẩn hóa địa chỉ ví trước so sánh
+    const normalizedPatientAddress = normalizeWalletAddress(labOrder.patientAddress);
+    const normalizedUserWallet = normalizeWalletAddress(currentUser.walletAddress);
+
+    // Kiểm tra bệnh nhân sở hữu order này
+    if (normalizedPatientAddress !== normalizedUserWallet) {
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Bạn không có quyền xác nhận order này');
+    }
+
+    // Kiểm tra trạng thái hiện tại phải là ORDERED
+    if (labOrder.sampleStatus !== 'ORDERED') {
+        throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            `Chỉ có thể xác nhận order ở trạng thái ORDERED, hiện tại: ${labOrder.sampleStatus}`
+        );
+    }
+
+    const recordId = labOrder.blockchainRecordId;
+    if (!recordId) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Order không có blockchainRecordId');
+    }
+
+    console.log(`[confirmConsentToOrder] Xác thực txHash: ${txHash}`);
+
+    // Xác thực giao dịch trên blockchain
+    let txVerification;
+    try {
+        txVerification = await metaMaskTxBuilder.verifyTransactionOnBlockchain(txHash);
+    } catch (error) {
+        console.error(`[confirmConsentToOrder] Xác thực giao dịch thất bại:`, error.message);
+        throw error;
+    }
+
+    if (!txVerification.confirmed) {
+        throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            'Giao dịch chưa được xác thực trên blockchain. Vui lòng chờ và thử lại.'
+        );
+    }
+
+    // Xác thực signer trùng khớp với người dùng hiện tại
+    const normalizedSigner = ethers.getAddress(txVerification.from);
+    const normalizedExpectedSigner = ethers.getAddress(normalizedPatientAddress);
+
+    if (normalizedSigner !== normalizedExpectedSigner) {
+        throw new ApiError(
+            StatusCodes.FORBIDDEN,
+            `Signer giao dịch không trùng khớp. Dự kiến: ${normalizedExpectedSigner}, Nhận được: ${normalizedSigner}`
+        );
+    }
+
+    console.log(`[confirmConsentToOrder] ✅ Transaction verified. Signer: ${normalizedSigner}`);
+
+    // Cập nhật trạng thái trong MongoDB
+    const now = new Date();
+    labOrder.sampleStatus = 'CONSENTED';
+    labOrder.auditLogs = labOrder.auditLogs || [];
+    labOrder.auditLogs.push({
+        from: 'ORDERED',
+        to: 'CONSENTED',
+        by: normalizedUserWallet,
+        at: now,
+        txHash,
+    });
+    await labOrder.save();
+
+    console.log(`[confirmConsentToOrder] ✅ MongoDB updated. Status: CONSENTED`);
+
+    // Ghi audit log
+    await auditLogModel.createLog({
+        userId: currentUser._id,
+        walletAddress: normalizedUserWallet,
+        action: 'CONSENT_LAB_ORDER',
+        entityType: 'LAB_ORDER',
+        entityId: labOrder._id,
+        txHash,
+        blockNumber: txVerification.blockNumber,
+        status: txVerification.status,
+        details: {
+            note: `Patient (MetaMask) consented to lab order ${labOrderId}`,
+            recordId,
+            gasUsed: txVerification.gasUsed,
+        },
+    });
+
+    console.log(`[confirmConsentToOrder] ✅ Audit log created`);
+
+    return {
+        success: true,
+        message: 'Xác nhận đồng ý thành công (frontend signed with MetaMask)',
+        data: {
+            orderId: labOrder._id.toString(),
+            blockchainRecordId: recordId,
+            txHash,
+            blockNumber: txVerification.blockNumber,
+            status: 'CONSENTED',
+            updatedAt: now,
+        },
     };
 };
 
@@ -1182,12 +1373,370 @@ const directCompleteRecord = async (currentUser, medicalRecordId) => {
     };
 };
 
+// ==============================================================================
+// METAMASK FLOW: DOCTOR ENDPOINTS (3 APIs)
+// ==============================================================================
+
+/**
+ * Chuẩn bị unsigned transaction cho ADD RECORD (doctor ký)
+ */
+const prepareAddRecordTransaction = async (currentUser, data) => {
+    const { patientAddress, recordType, requiredLevel, orderHash } = data;
+
+    if (!patientAddress || !recordType || requiredLevel === undefined || !orderHash) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu thông tin bắt buộc');
+    }
+
+    // Kiểm tra doctor status
+    const user = await userModel.findById(currentUser._id);
+    if (!user || user.status !== 'ACTIVE' || user.role !== 'DOCTOR') {
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Account không hoạt động');
+    }
+
+    const RECORD_TYPE_MAP = { GENERAL: 0, HIV_TEST: 1, DIABETES_TEST: 2, LAB_RESULT: 3 };
+    const recordTypeNum = RECORD_TYPE_MAP[recordType];
+
+    try {
+        const txData = await metaMaskTxBuilder.prepareAddRecordTx(
+            currentUser.walletAddress,
+            patientAddress,
+            recordTypeNum,
+            requiredLevel,
+            orderHash
+        );
+
+        return { success: true, data: txData };
+    } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, error.message);
+    }
+};
+
+/**
+ * Xác nhận ADD RECORD sau khi doctor ký
+ */
+const confirmAddRecord = async (currentUser, data) => {
+    const { txHash, labOrderId } = data;
+
+    if (!txHash || !labOrderId) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu thông tin bắt buộc: txHash, labOrderId');
+    }
+
+    try {
+        const txVerification = await metaMaskTxBuilder.verifyTransactionOnBlockchain(txHash);
+
+        if (!txVerification.confirmed) {
+            throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch chưa được xác thực');
+        }
+
+        await auditLogModel.createLog({
+            userId: currentUser._id,
+            walletAddress: currentUser.walletAddress,
+            action: 'ADD_RECORD',
+            entityType: 'LAB_ORDER',
+            entityId: labOrderId,
+            txHash,
+            status: 'SUCCESS',
+            details: { note: 'Doctor created lab order via MetaMask' },
+        });
+
+        return {
+            success: true,
+            message: 'Tạo lab order thành công',
+            data: { labOrderId, txHash, blockNumber: txVerification.blockNumber, status: 'SUCCESS' },
+        };
+    } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError(StatusCodes.BAD_REQUEST, error.message);
+    }
+};
+
+/**
+ * Chuẩn bị unsigned transaction cho CLINICAL INTERPRETATION (doctor ký)
+ */
+const prepareInterpretationTransaction = async (currentUser, data) => {
+    const { recordId, interpretationHash } = data;
+
+    if (!recordId || !interpretationHash) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu thông tin bắt buộc');
+    }
+
+    const user = await userModel.findById(currentUser._id);
+    if (!user || user.status !== 'ACTIVE' || user.role !== 'DOCTOR') {
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Account không hoạt động');
+    }
+
+    try {
+        const txData = await metaMaskTxBuilder.prepareInterpretationTx(
+            currentUser.walletAddress,
+            recordId,
+            interpretationHash
+        );
+
+        return { success: true, data: txData };
+    } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, error.message);
+    }
+};
+
+/**
+ * Xác nhận CLINICAL INTERPRETATION sau khi doctor ký
+ */
+const confirmInterpretation = async (currentUser, data) => {
+    const { txHash, labOrderId } = data;
+
+    if (!txHash || !labOrderId) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu thông tin bắt buộc');
+    }
+
+    try {
+        const txVerification = await metaMaskTxBuilder.verifyTransactionOnBlockchain(txHash);
+
+        if (!txVerification.confirmed) {
+            throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch chưa được xác thực');
+        }
+
+        await auditLogModel.createLog({
+            userId: currentUser._id,
+            walletAddress: currentUser.walletAddress,
+            action: 'ADD_INTERPRETATION',
+            entityType: 'LAB_ORDER',
+            entityId: labOrderId,
+            txHash,
+            status: 'SUCCESS',
+            details: { note: 'Doctor added interpretation via MetaMask' },
+        });
+
+        return {
+            success: true,
+            message: 'Thêm diễn giải thành công',
+            data: { labOrderId, txHash, blockNumber: txVerification.blockNumber, status: 'SUCCESS' },
+        };
+    } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError(StatusCodes.BAD_REQUEST, error.message);
+    }
+};
+
+/**
+ * Chuẩn bị unsigned transaction cho COMPLETE RECORD (doctor ký)
+ */
+const prepareCompleteTransaction = async (currentUser, data) => {
+    const { recordId } = data;
+
+    if (!recordId) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu recordId');
+    }
+
+    const user = await userModel.findById(currentUser._id);
+    if (!user || user.status !== 'ACTIVE' || user.role !== 'DOCTOR') {
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Account không hoạt động');
+    }
+
+    try {
+        const txData = await metaMaskTxBuilder.prepareCompleteTx(currentUser.walletAddress, recordId);
+
+        return { success: true, data: txData };
+    } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, error.message);
+    }
+};
+
+/**
+ * Xác nhận COMPLETE RECORD sau khi doctor ký
+ */
+const confirmComplete = async (currentUser, data) => {
+    const { txHash, labOrderId } = data;
+
+    if (!txHash || !labOrderId) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu thông tin bắt buộc');
+    }
+
+    try {
+        const txVerification = await metaMaskTxBuilder.verifyTransactionOnBlockchain(txHash);
+
+        if (!txVerification.confirmed) {
+            throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch chưa được xác thực');
+        }
+
+        await auditLogModel.createLog({
+            userId: currentUser._id,
+            walletAddress: currentUser.walletAddress,
+            action: 'COMPLETE_RECORD',
+            entityType: 'LAB_ORDER',
+            entityId: labOrderId,
+            txHash,
+            status: 'SUCCESS',
+            details: { note: 'Doctor completed record via MetaMask' },
+        });
+
+        return {
+            success: true,
+            message: 'Chốt hồ sơ thành công',
+            data: { labOrderId, txHash, blockNumber: txVerification.blockNumber, status: 'SUCCESS' },
+        };
+    } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError(StatusCodes.BAD_REQUEST, error.message);
+    }
+};
+
+// ==============================================================================
+// METAMASK FLOW: LAB_TECH ENDPOINTS (2 APIs)
+// ==============================================================================
+
+/**
+ * Chuẩn bị unsigned transaction cho RECEIVE ORDER (lab tech ký)
+ */
+const prepareReceiveOrderTransaction = async (currentUser, data) => {
+    const { recordId } = data;
+
+    if (!recordId) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu recordId');
+    }
+
+    const user = await userModel.findById(currentUser._id);
+    if (!user || user.status !== 'ACTIVE' || user.role !== 'LAB_TECH') {
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Account không hoạt động');
+    }
+
+    try {
+        const txData = await metaMaskTxBuilder.prepareReceiveOrderTx(currentUser.walletAddress, recordId);
+
+        return { success: true, data: txData };
+    } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, error.message);
+    }
+};
+
+/**
+ * Xác nhận RECEIVE ORDER sau khi lab tech ký
+ */
+const confirmReceiveOrder = async (currentUser, data) => {
+    const { txHash, labOrderId } = data;
+
+    if (!txHash || !labOrderId) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu thông tin bắt buộc');
+    }
+
+    try {
+        const txVerification = await metaMaskTxBuilder.verifyTransactionOnBlockchain(txHash);
+
+        if (!txVerification.confirmed) {
+            throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch chưa được xác thực');
+        }
+
+        await auditLogModel.createLog({
+            userId: currentUser._id,
+            walletAddress: currentUser.walletAddress,
+            action: 'RECEIVE_ORDER',
+            entityType: 'LAB_ORDER',
+            entityId: labOrderId,
+            txHash,
+            status: 'SUCCESS',
+            details: { note: 'Lab tech received order via MetaMask' },
+        });
+
+        return {
+            success: true,
+            message: 'Tiếp nhận order thành công',
+            data: { labOrderId, txHash, blockNumber: txVerification.blockNumber, status: 'SUCCESS' },
+        };
+    } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError(StatusCodes.BAD_REQUEST, error.message);
+    }
+};
+
+/**
+ * Chuẩn bị unsigned transaction cho POST LAB RESULT (lab tech ký)
+ */
+const preparePostResultTransaction = async (currentUser, data) => {
+    const { recordId, labResultHash } = data;
+
+    if (!recordId || !labResultHash) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu thông tin bắt buộc');
+    }
+
+    const user = await userModel.findById(currentUser._id);
+    if (!user || user.status !== 'ACTIVE' || user.role !== 'LAB_TECH') {
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Account không hoạt động');
+    }
+
+    try {
+        const txData = await metaMaskTxBuilder.preparePostResultTx(
+            currentUser.walletAddress,
+            recordId,
+            labResultHash
+        );
+
+        return { success: true, data: txData };
+    } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, error.message);
+    }
+};
+
+/**
+ * Xác nhận POST LAB RESULT sau khi lab tech ký
+ */
+const confirmPostResult = async (currentUser, data) => {
+    const { txHash, labOrderId } = data;
+
+    if (!txHash || !labOrderId) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu thông tin bắt buộc');
+    }
+
+    try {
+        const txVerification = await metaMaskTxBuilder.verifyTransactionOnBlockchain(txHash);
+
+        if (!txVerification.confirmed) {
+            throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch chưa được xác thực');
+        }
+
+        await auditLogModel.createLog({
+            userId: currentUser._id,
+            walletAddress: currentUser.walletAddress,
+            action: 'POST_LAB_RESULT',
+            entityType: 'LAB_ORDER',
+            entityId: labOrderId,
+            txHash,
+            status: 'SUCCESS',
+            details: { note: 'Lab tech posted result via MetaMask' },
+        });
+
+        return {
+            success: true,
+            message: 'Post kết quả thành công',
+            data: { labOrderId, txHash, blockNumber: txVerification.blockNumber, status: 'SUCCESS' },
+        };
+    } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError(StatusCodes.BAD_REQUEST, error.message);
+    }
+};
+
 export const ehrWorkflowService = {
     consentToOrder,
+    prepareConsentToOrderTx,
+    confirmConsentToOrder,
     receiveOrder,
     postLabResult,
     addClinicalInterpretation,
     completeRecord,
     directCompleteRecord,
+    prepareAddRecordTransaction,
+    confirmAddRecord,
+    prepareInterpretationTransaction,
+    confirmInterpretation,
+    prepareCompleteTransaction,
+    confirmComplete,
+    prepareReceiveOrderTransaction,
+    confirmReceiveOrder,
+    preparePostResultTransaction,
+    confirmPostResult,
 };
 

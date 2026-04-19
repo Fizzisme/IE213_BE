@@ -91,6 +91,87 @@ const getMyGrants = async (req, res, next) => {
     }
 };
 
+// ==============================================================================
+// LU\u1ed2NG METAMASK: CHU\u1ea8N B\u1eca & X\u00c1C NH\u1eaaN H\u00c0NG\n// ==============================================================================
+
+/**
+ * GET /access-control/grant/prepare (Step 1)
+ * Chuẩn bị unsigned transaction cho grant access
+ */
+const prepareGrantAccess = async (req, res, next) => {
+    try {
+        const result = await accessControlService.prepareGrantAccessTransaction(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+/**
+ * POST /access-control/grant/confirm (Step 2)
+ * Xác nhận grant access sau khi ký với MetaMask
+ */
+const confirmGrantAccess = async (req, res, next) => {
+    try {
+        const result = await accessControlService.confirmGrantAccess(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+/**
+ * GET /access-control/revoke/prepare (Step 1)
+ * Chuẩn bị unsigned transaction cho revoke access
+ */
+const prepareRevokeAccess = async (req, res, next) => {
+    try {
+        const result = await accessControlService.prepareRevokeAccessTransaction(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+/**
+ * POST /access-control/revoke/confirm (Step 2)
+ * Xác nhận revoke access sau khi ký với MetaMask
+ */
+const confirmRevokeAccess = async (req, res, next) => {
+    try {
+        const result = await accessControlService.confirmRevokeAccess(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+/**
+ * PUT /access-control/update/prepare (Step 1)
+ * Chuẩn bị unsigned transaction cho update access
+ */
+const prepareUpdateAccess = async (req, res, next) => {
+    try {
+        const result = await accessControlService.prepareUpdateAccessTransaction(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+/**
+ * PATCH /access-control/update/confirm (Step 2)
+ * Xác nhận update access sau khi ký với MetaMask
+ */
+const confirmUpdateAccess = async (req, res, next) => {
+    try {
+        const result = await accessControlService.confirmUpdateAccess(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
 export const accessControlController = {
     grantAccess,
     updateAccess,
@@ -98,4 +179,10 @@ export const accessControlController = {
     checkAccess,
     getAccessGrant,
     getMyGrants,
+    prepareGrantAccess,
+    confirmGrantAccess,
+    prepareRevokeAccess,
+    confirmRevokeAccess,
+    prepareUpdateAccess,
+    confirmUpdateAccess,
 };

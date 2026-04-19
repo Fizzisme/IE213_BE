@@ -92,7 +92,7 @@ Router.use(verifyToken);
  *             $ref: '#/components/schemas/GrantAccessRequest'
  *           examples:
  *             grant_full_7days_new:
- *               summary: "(NEW Feature 3) Cấp quyền FULL hết hạn trong 7 ngày qua expiresAt"
+ *               summary: "(Tính năng 3 mới) Cấp quyền FULL hết hạn trong 7 ngày qua expiresAt"
  *               value:
  *                 accessorAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
  *                 level: "FULL"
@@ -155,7 +155,7 @@ Router.post('/grant', authorizeRoles('PATIENT'), accessControlController.grantAc
  *             $ref: '#/components/schemas/GrantAccessRequest'
  *           examples:
  *             upgrade_to_sensitive_new:
- *               summary: "(NEW Feature 3) Nâng cấp FULL → SENSITIVE với hết hạn cố định"
+ *               summary: "(Tính năng 3 mới) Nâng cấp FULL → SENSITIVE với hết hạn cố định"
  *               value:
  *                 accessorAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
  *                 level: "SENSITIVE"
@@ -401,5 +401,158 @@ Router.post('/grant-info', accessControlController.getAccessGrant);
  *         description: Lỗi lấy danh sách
  */
 Router.get('/my-grants', authorizeRoles('PATIENT'), accessControlController.getMyGrants);
+
+/**
+ * @swagger
+ * /v1/access-control/grant/prepare:
+ *   get:
+ *     summary: Chuẩn bị unsigned transaction cho grant access (Step 1 - MetaMask)
+ *     description: |
+ *       Step 1 của MetaMask flow cho grant access.
+ *       Backend chuẩn bị unsigned transaction, frontend ký với MetaMask.
+ *       Returns: unsigned transaction object + gas estimates
+ *     tags: [Access Control, MetaMask]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [accessorAddress, level]
+ *             properties:
+ *               accessorAddress:
+ *                 type: string
+ *               level:
+ *                 type: string
+ *                 enum: [FULL, SENSITIVE]
+ *               durationHours:
+ *                 type: number
+ */
+Router.get('/grant/prepare', authorizeRoles('PATIENT'), accessControlController.prepareGrantAccess);
+
+/**
+ * @swagger
+ * /v1/access-control/grant/confirm:
+ *   post:
+ *     summary: Xác nhận grant access sau khi ký MetaMask (Step 2)
+ *     description: |
+ *       Step 2 của MetaMask flow: frontend gửi signed transaction.
+ *       Backend xác thực txHash trên blockchain + update MongoDB.
+ *     tags: [Access Control, MetaMask]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [accessorAddress, txHash]
+ *             properties:
+ *               accessorAddress:
+ *                 type: string
+ *               txHash:
+ *                 type: string
+ */
+Router.post('/grant/confirm', authorizeRoles('PATIENT'), accessControlController.confirmGrantAccess);
+
+/**
+ * @swagger
+ * /v1/access-control/revoke/prepare:
+ *   get:
+ *     summary: Chuẩn bị unsigned transaction cho revoke access (Step 1 - MetaMask)
+ *     tags: [Access Control, MetaMask]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [accessorAddress]
+ *             properties:
+ *               accessorAddress:
+ *                 type: string
+ */
+Router.get('/revoke/prepare', authorizeRoles('PATIENT'), accessControlController.prepareRevokeAccess);
+
+/**
+ * @swagger
+ * /v1/access-control/revoke/confirm:
+ *   post:
+ *     summary: Xác nhận revoke access sau khi ký MetaMask (Step 2)
+ *     tags: [Access Control, MetaMask]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [accessorAddress, txHash]
+ *             properties:
+ *               accessorAddress:
+ *                 type: string
+ *               txHash:
+ *                 type: string
+ */
+Router.post('/revoke/confirm', authorizeRoles('PATIENT'), accessControlController.confirmRevokeAccess);
+
+/**
+ * @swagger
+ * /v1/access-control/update/prepare:
+ *   put:
+ *     summary: Chuẩn bị unsigned transaction cho update access (Step 1 - MetaMask)
+ *     tags: [Access Control, MetaMask]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [accessorAddress, level]
+ *             properties:
+ *               accessorAddress:
+ *                 type: string
+ *               level:
+ *                 type: string
+ *                 enum: [FULL, SENSITIVE]
+ *               durationHours:
+ *                 type: number
+ */
+Router.put('/update/prepare', authorizeRoles('PATIENT'), accessControlController.prepareUpdateAccess);
+
+/**
+ * @swagger
+ * /v1/access-control/update/confirm:
+ *   patch:
+ *     summary: Xác nhận update access sau khi ký MetaMask (Step 2)
+ *     tags: [Access Control, MetaMask]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [accessorAddress, txHash]
+ *             properties:
+ *               accessorAddress:
+ *                 type: string
+ *               txHash:
+ *                 type: string
+ *               level:
+ *                 type: string
+ *               durationHours:
+ *                 type: number
+ */
+Router.patch('/update/confirm', authorizeRoles('PATIENT'), accessControlController.confirmUpdateAccess);
 
 export const accessControlRoute = Router;

@@ -47,6 +47,33 @@ const consentToOrder = async (req, res, next) => {
     }
 };
 
+// ============================================================================
+// METAMASK FLOW: Thêm 2 endpoint mới cho consent
+// ============================================================================
+
+// Step 4a: PREPARE CONSENT TX (GET /lab-orders/:id/prepare-consent)
+// Frontend gọi để nhận unsigned transaction chuẩn bị ký với MetaMask
+const prepareConsentToOrder = async (req, res, next) => {
+    try {
+        const result = await ehrWorkflowService.prepareConsentToOrderTx(req.user, req.params.id);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+// Step 4b: CONFIRM CONSENT TX (PATCH /lab-orders/:id/consent/confirm)
+// Frontend gọi sau khi ký với MetaMask, gửi txHash lên để backend verify & update MongoDB
+const confirmConsentToOrder = async (req, res, next) => {
+    try {
+        const { txHash } = req.body;
+        const result = await ehrWorkflowService.confirmConsentToOrder(req.user, req.params.id, txHash);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
 // Step 5: Lab Tech tiếp nhận order
 const receiveOrder = async (req, res, next) => {
     try {
@@ -87,10 +114,120 @@ const completeRecord = async (req, res, next) => {
     }
 };
 
+// ==============================================================================
+// LUỒNG METAMASK: XỬ LÝ BÁC SĨ
+// ==============================================================================
+
+const prepareAddRecord = async (req, res, next) => {
+    try {
+        const result = await ehrWorkflowService.prepareAddRecordTransaction(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+const confirmAddRecord = async (req, res, next) => {
+    try {
+        const result = await ehrWorkflowService.confirmAddRecord(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+const prepareInterpretation = async (req, res, next) => {
+    try {
+        const result = await ehrWorkflowService.prepareInterpretationTransaction(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+const confirmInterpretation = async (req, res, next) => {
+    try {
+        const result = await ehrWorkflowService.confirmInterpretation(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+const prepareComplete = async (req, res, next) => {
+    try {
+        const result = await ehrWorkflowService.prepareCompleteTransaction(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+const confirmComplete = async (req, res, next) => {
+    try {
+        const result = await ehrWorkflowService.confirmComplete(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+// ==============================================================================
+// LUỒNG METAMASK: XỬ LÝ LAB TECH
+// ==============================================================================
+
+const prepareReceiveOrder = async (req, res, next) => {
+    try {
+        const result = await ehrWorkflowService.prepareReceiveOrderTransaction(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+const confirmReceiveOrder = async (req, res, next) => {
+    try {
+        const result = await ehrWorkflowService.confirmReceiveOrder(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+const preparePostResult = async (req, res, next) => {
+    try {
+        const result = await ehrWorkflowService.preparePostResultTransaction(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+const confirmPostResult = async (req, res, next) => {
+    try {
+        const result = await ehrWorkflowService.confirmPostResult(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
 export const ehrWorkflowController = {
     consentToOrder,
+    prepareConsentToOrder,
+    confirmConsentToOrder,
     receiveOrder,
     postLabResult,
     addClinicalInterpretation,
     completeRecord,
+    prepareAddRecord,
+    confirmAddRecord,
+    prepareInterpretation,
+    confirmInterpretation,
+    prepareComplete,
+    confirmComplete,
+    prepareReceiveOrder,
+    confirmReceiveOrder,
+    preparePostResult,
+    confirmPostResult,
 };

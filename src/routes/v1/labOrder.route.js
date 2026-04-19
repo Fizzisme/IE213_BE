@@ -29,7 +29,7 @@ const Router = express.Router();
  *           example: "6801a2b3c4d5e6f789012345"
  *         assignedLabTech:
  *           type: string
- *           description: "ID của lab tech được chỉ định để làm xét nghiệm (MongoDB ObjectId của user LAB_TECH). 🆕 V3 Update: Doctor specifies lab tech when creating order"
+ *           description: "ID của lab tech được chỉ định để làm xét nghiệm (MongoDB ObjectId của user LAB_TECH). Cập nhật V3: Bác sĩ chỉ định lab tech khi tạo order"
  *           example: "6801a2b3c4d5e6f789012346"
  *         recordType:
  *           type: string
@@ -197,6 +197,167 @@ Router.post('/', verifyToken, authorizeRoles('DOCTOR'), labOrderController.creat
  *         description: Không phải bệnh nhân sở hữu order này
  */
 Router.patch('/:id/consent', verifyToken, authorizeRoles('PATIENT'), ehrWorkflowController.consentToOrder);
+
+/**
+ * @swagger
+ * /v1/lab-orders/{id}/prepare-consent:
+ *   get:
+ *     summary: Chuẩn bị unsigned transaction cho MetaMask signing (Step 4a)
+ *     description: |
+ *       METAMASK FLOW - Step 4a: Chuẩn bị
+ *       
+ *       Bệnh nhân gọi endpoint này để nhận unsigned transaction.
+ *       Frontend dùng MetaMask ký transaction này.
+ *       
+ *       Thay vì backend ký dùm (cũ), bây giờ:
+ *       1. Backend chuẩn bị unsigned tx + gas estimate
+ *       2. Frontend ký với MetaMask (user confirm popup)
+ *       3. Frontend gửi signed tx lên backend để broadcast
+ *
+ *       Returns: { unsignedTx, gasEstimate, estimatedCostEther, nonce, chainId }
+ *       Frontend cần convert unsignedTx → MetaMask format + ký + gửi txHash qua Step 4b
+ *     tags: [LabOrder, MetaMask]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID của lab order (MongoDB ObjectId)
+ *         example: "6801a2b3c4d5e6f789012345"
+ *     responses:
+ *       200:
+ *         description: Unsigned transaction prepared, ready for MetaMask signing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     unsignedTx:
+ *                       type: object
+ *                       description: Unsigned transaction object (frontend ký với MetaMask)
+ *                       properties:
+ *                         to:
+ *                           type: string
+ *                           example: "0x5FbDB2315678afccb333f8a9c36c1da42109ffff"
+ *                         from:
+ *                           type: string
+ *                           example: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+ *                         data:
+ *                           type: string
+ *                           description: Encoded function call (updateRecordStatus)
+ *                         gasLimit:
+ *                           type: string
+ *                           example: "120000"
+ *                         gasPrice:
+ *                           type: string
+ *                           example: "123456789"
+ *                         nonce:
+ *                           type: number
+ *                           example: 5
+ *                         chainId:
+ *                           type: number
+ *                           example: 11155111
+ *                     gasEstimate:
+ *                       type: string
+ *                       description: Estimated gas (without buffer)
+ *                       example: "100000"
+ *                     estimatedCostEther:
+ *                       type: string
+ *                       description: Estimated gas cost in ETH
+ *                       example: "0.012345"
+ *       400:
+ *         description: Order không ở trạng thái ORDERED, invalid address, hoặc gas estimation failed
+ *       403:
+ *         description: Không phải bệnh nhân sở hữu order này, hoặc account status != ACTIVE
+ */
+Router.get('/:id/prepare-consent', verifyToken, authorizeRoles('PATIENT'), ehrWorkflowController.prepareConsentToOrder);
+
+/**
+ * @swagger
+ * /v1/lab-orders/{id}/consent/confirm:
+ *   patch:
+ *     summary: Xác nhận MetaMask signing, broadcast & update MongoDB (Step 4b)
+ *     description: |
+ *       LUỒNG METAMASK - Buớc 4b: Xác nhận
+ *       
+ *       Flow:
+ *       1. Frontend gọi /prepare-consent → nhận unsignedTx
+ *       2. Frontend dùng MetaMask ký → nhận signedTx
+ *       3. Frontend gọi endpoint này với { txHash } từ signed tx
+ *       4. Backend verify txHash trên blockchain
+ *       5. Backend extract msg.sender từ blockchain tx
+ *       6. Backend verify signer = hiện tại user
+ *       7. Backend update MongoDB + audit log
+ *       
+ *       Response: { txHash, blockNumber, status: CONSENTED }
+ *     tags: [LabOrder, MetaMask]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID của lab order (MongoDB ObjectId)
+ *         example: "6801a2b3c4d5e6f789012345"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - txHash
+ *             properties:
+ *               txHash:
+ *                 type: string
+ *                 description: Transaction hash từ signed tx (frontend cung cấp)
+ *                 example: "0xabc123def456..."
+ *     responses:
+ *       200:
+ *         description: Transaction confirmed trên blockchain, MongoDB updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Xác nhận đồng ý thành công (frontend signed with MetaMask)"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     orderId:
+ *                       type: string
+ *                       example: "6801a2b3c4d5e6f789012345"
+ *                     txHash:
+ *                       type: string
+ *                       example: "0xabc123def456..."
+ *                     blockNumber:
+ *                       type: number
+ *                       example: 5612345
+ *                     status:
+ *                       type: string
+ *                       example: "CONSENTED"
+ *       400:
+ *         description: Invalid txHash, transaction not confirmed, order wrong status
+ *       403:
+ *         description: Signer không match user hiện tại
+ */
+Router.patch('/:id/consent/confirm', verifyToken, authorizeRoles('PATIENT'), ehrWorkflowController.confirmConsentToOrder);
 
 /**
  * @swagger
@@ -744,5 +905,305 @@ Router.patch('/:labOrderId/cancel', verifyToken, labOrderController.cancelLabOrd
  *         description: Order hoặc lab tech không tìm thấy
  */
 Router.post('/admin/assign', verifyToken, authorizeRoles('ADMIN'), labOrderController.assignLabOrderToTech);
+
+// ==============================================================================
+// LUỒNG METAMASK: BÁC SĨ - Thêm Hồ SƠ
+// ==============================================================================
+
+/**
+ * @swagger
+ * /v1/lab-orders/create/prepare:
+ *   post:
+ *     summary: Chuẩn bị unsigned transaction cho bác sĩ tạo lab order (MetaMask Flow - Step 1a)
+ *     description: |
+ *       Bác sĩ gọi endpoint này để nhận unsigned transaction cho việc tạo lab order trên blockchain.
+ *       Frontend dùng MetaMask ký transaction này, sau đó confirm via /create/confirm.
+ *     tags: [LabOrder, MetaMask, Doctor]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               patientAddress:
+ *                 type: string
+ *                 example: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+ *               recordType:
+ *                 type: integer
+ *                 example: 1
+ *               requiredLevel:
+ *                 type: integer
+ *                 example: 2
+ *               orderHash:
+ *                 type: string
+ *                 example: "0x123abc456def..."
+ *     responses:
+ *       200:
+ *         description: Unsigned transaction prepared
+ */
+Router.post('/create/prepare', verifyToken, authorizeRoles('DOCTOR'), ehrWorkflowController.prepareAddRecord);
+
+/**
+ * @swagger
+ * /v1/lab-orders/create/confirm:
+ *   post:
+ *     summary: Xác nhận giao dịch tạo lab order sau khi ký MetaMask (Step 1b)
+ *     tags: [LabOrder, MetaMask, Doctor]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               txHash:
+ *                 type: string
+ *                 example: "0x123abc456def789..."
+ *     responses:
+ *       200:
+ *         description: Lab order created successfully
+ */
+Router.post('/create/confirm', verifyToken, authorizeRoles('DOCTOR'), ehrWorkflowController.confirmAddRecord);
+
+// ==============================================================================
+// LUỒNG METAMASK: BÁC SĨ - Giải Thích LAm Sàng
+// ==============================================================================
+
+/**
+ * @swagger
+ * /v1/lab-orders/{id}/interpretation/prepare:
+ *   post:
+ *     summary: Chuẩn bị unsigned transaction cho bác sĩ thêm giải thích lâm sàng (MetaMask Flow - Step 2a)
+ *     tags: [LabOrder, MetaMask, Doctor]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               interpretationHash:
+ *                 type: string
+ *                 example: "0x123abc456def..."
+ *     responses:
+ *       200:
+ *         description: Unsigned transaction prepared
+ */
+Router.post('/:id/interpretation/prepare', verifyToken, authorizeRoles('DOCTOR'), ehrWorkflowController.prepareInterpretation);
+
+/**
+ * @swagger
+ * /v1/lab-orders/{id}/interpretation/confirm:
+ *   post:
+ *     summary: Xác nhận giao dịch thêm giải thích lâm sàng sau khi ký MetaMask (Step 2b)
+ *     tags: [LabOrder, MetaMask, Doctor]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               txHash:
+ *                 type: string
+ *                 example: "0x123abc456def789..."
+ *     responses:
+ *       200:
+ *         description: Interpretation added successfully
+ */
+Router.post('/:id/interpretation/confirm', verifyToken, authorizeRoles('DOCTOR'), ehrWorkflowController.confirmInterpretation);
+
+// ==============================================================================
+// LUỒNG METAMASK: BÁC SĨ - Hoàn Thành
+// ==============================================================================
+
+/**
+ * @swagger
+ * /v1/lab-orders/{id}/complete/prepare:
+ *   post:
+ *     summary: Chuẩn bị unsigned transaction cho bác sĩ hoàn thành record (MetaMask Flow - Step 3a)
+ *     tags: [LabOrder, MetaMask, Doctor]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Unsigned transaction prepared
+ */
+Router.post('/:id/complete/prepare', verifyToken, authorizeRoles('DOCTOR'), ehrWorkflowController.prepareComplete);
+
+/**
+ * @swagger
+ * /v1/lab-orders/{id}/complete/confirm:
+ *   post:
+ *     summary: Xác nhận giao dịch hoàn thành record sau khi ký MetaMask (Step 3b)
+ *     tags: [LabOrder, MetaMask, Doctor]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               txHash:
+ *                 type: string
+ *                 example: "0x123abc456def789..."
+ *     responses:
+ *       200:
+ *         description: Record completed successfully
+ */
+Router.post('/:id/complete/confirm', verifyToken, authorizeRoles('DOCTOR'), ehrWorkflowController.confirmComplete);
+
+// ==============================================================================
+// LUỒNG METAMASK: LAB TECH - Tiếp Nhẫn Order
+// ==============================================================================
+
+/**
+ * @swagger
+ * /v1/lab-orders/{id}/receive/prepare:
+ *   post:
+ *     summary: Chuẩn bị unsigned transaction cho lab tech nhận order (MetaMask Flow - Step 4a)
+ *     tags: [LabOrder, MetaMask, LabTech]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Unsigned transaction prepared
+ */
+Router.post('/:id/receive/prepare', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflowController.prepareReceiveOrder);
+
+/**
+ * @swagger
+ * /v1/lab-orders/{id}/receive/confirm:
+ *   post:
+ *     summary: Xác nhận giao dịch nhận order sau khi ký MetaMask (Step 4b)
+ *     tags: [LabOrder, MetaMask, LabTech]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               txHash:
+ *                 type: string
+ *                 example: "0x123abc456def789..."
+ *     responses:
+ *       200:
+ *         description: Order received successfully
+ */
+Router.post('/:id/receive/confirm', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflowController.confirmReceiveOrder);
+
+// ==============================================================================
+// LUỒNG METAMASK: LAB TECH - Gửi Kết Quả
+// ==============================================================================
+
+/**
+ * @swagger
+ * /v1/lab-orders/{id}/post-result/prepare:
+ *   post:
+ *     summary: Chuẩn bị unsigned transaction cho lab tech gửi kết quả (MetaMask Flow - Step 5a)
+ *     tags: [LabOrder, MetaMask, LabTech]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               labResultHash:
+ *                 type: string
+ *                 example: "0x123abc456def..."
+ *     responses:
+ *       200:
+ *         description: Unsigned transaction prepared
+ */
+Router.post('/:id/post-result/prepare', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflowController.preparePostResult);
+
+/**
+ * @swagger
+ * /v1/lab-orders/{id}/post-result/confirm:
+ *   post:
+ *     summary: Xác nhận giao dịch gửi kết quả sau khi ký MetaMask (Step 5b)
+ *     tags: [LabOrder, MetaMask, LabTech]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               txHash:
+ *                 type: string
+ *                 example: "0x123abc456def789..."
+ *     responses:
+ *       200:
+ *         description: Lab result posted successfully
+ */
+Router.post('/:id/post-result/confirm', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflowController.confirmPostResult);
 
 export const labOrderRoute = Router;
