@@ -452,7 +452,7 @@ const confirmGrantAccess = async (currentUser, data) => {
 
         // Ghi audit log
         const finalDurationHours = durationHours || (expiresAt ? Math.ceil((expiresAt - Math.floor(Date.now() / 1000)) / 3600) : 0);
-        
+
         await auditLogModel.createLog({
             userId: currentUser._id,
             walletAddress: currentUser.walletAddress,
@@ -662,7 +662,7 @@ const confirmUpdateAccess = async (currentUser, data) => {
 
         // Ghi audit log
         const finalDurationHours = durationHours || (expiresAt ? Math.ceil((expiresAt - Math.floor(Date.now() / 1000)) / 3600) : 0);
-        
+
         await auditLogModel.createLog({
             userId: currentUser._id,
             walletAddress: currentUser.walletAddress,
