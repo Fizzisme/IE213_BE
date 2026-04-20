@@ -66,9 +66,22 @@ const getAppointmentsByPatientId = async (patientId) => {
         .lean();
 };
 
+const getAppointmentById = (id) => {
+    return AppointmentModel.findById(id);
+};
+
+const findOneAndUpdateAppointment = (filter, update, options = {}) => {
+    return AppointmentModel.findOneAndUpdate(filter, update, {
+        new: true,
+        runValidators: true,
+        ...options,
+    });
+};
 export const appointmentModel = {
     APPOINTMENT_STATUS,
     AppointmentModel,
     createNew,
     getAppointmentsByPatientId,
+    getAppointmentById,
+    findOneAndUpdateAppointment,
 };
