@@ -18,7 +18,6 @@ export const zodValidate = (schema) => (req, res, next) => {
     }
 
     // Thành công thì cho đi qua controller
-
     req.body = result.data;
 
     next();

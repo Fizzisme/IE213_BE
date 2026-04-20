@@ -3,12 +3,6 @@ import mongoose from 'mongoose';
 
 const COLLECTION_NAME = 'patients';
 
-const PATIENT_STATUS = {
-    ACTIVE: 'ACTIVE',
-    INACTIVE: 'INACTIVE',
-    DECEASED: 'DECEASED',
-};
-
 const patientSchema = new mongoose.Schema(
     {
         userId: {
@@ -16,12 +10,6 @@ const patientSchema = new mongoose.Schema(
             ref: 'users',
             required: true,
             unique: true,
-        },
-
-        fullName: {
-            type: String,
-            required: true,
-            minlength: 2,
         },
 
         gender: {
@@ -37,21 +25,6 @@ const patientSchema = new mongoose.Schema(
             required: true,
         },
 
-        phoneEncrypted: {
-            type: String,
-            default: null,
-        },
-
-        emailEncrypted: {
-            type: String,
-            default: null,
-        },
-
-        isActive: {
-            type: Boolean,
-            default: false,
-            required: true,
-        },
         deletedAt: {
             type: Date,
             default: null,
@@ -69,35 +42,60 @@ const createNew = async (data) => {
     return await PatientModel.create(data);
 };
 
+const getAll = async () => {
+    return await PatientModel.find({ deletedAt: null })
+        .select('_id userId gender birthYear createdAt')
+        .sort({ createdAt: -1 })
+        .lean();
+};
+
 const findByUserId = async (userId) => {
     return await PatientModel.findOne({
         userId,
         deletedAt: null,
-    }).lean();
+    })
+        .select('_id userId gender birthYear createdAt')
+        .lean();
 };
 
 const findById = async (patientId) => {
-    return await PatientModel.findById(patientId);
+    return await PatientModel.findOne({
+        _id: patientId,
+        deletedAt: null,
+    });
 };
 
 const updateById = async (patientId, updateData) => {
-    return await PatientModel.findByIdAndUpdate(patientId, updateData, { new: true, runValidators: true });
+    return await PatientModel.findOneAndUpdate(
+        { _id: patientId, deletedAt: null },
+        updateData,
+        { new: true, runValidators: true }
+    );
 };
 
 const softDelete = async (patientId) => {
     return await PatientModel.findByIdAndUpdate(
         patientId,
-        { deletedAt: new Date(), status: PATIENT_STATUS.INACTIVE },
+        { deletedAt: new Date() },
         { new: true },
     );
 };
 
+const softDeleteByUserId = async (userId) => {
+    return await PatientModel.findOneAndUpdate(
+        { userId, deletedAt: null },
+        { deletedAt: new Date() },
+        { new: true }
+    );
+};
+
 export const patientModel = {
-    PATIENT_STATUS,
     PatientModel,
     createNew,
+    getAll,
     findByUserId,
     findById,
     updateById,
     softDelete,
+    softDeleteByUserId,
 };
