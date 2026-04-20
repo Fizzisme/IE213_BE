@@ -77,6 +77,10 @@ const findOneAndUpdateAppointment = (filter, update, options = {}) => {
         ...options,
     });
 };
+
+const find = async (data) => {
+    return await AppointmentModel.find(data);
+}
 export const appointmentModel = {
     APPOINTMENT_STATUS,
     AppointmentModel,
@@ -84,4 +88,5 @@ export const appointmentModel = {
     getAppointmentsByPatientId,
     getAppointmentById,
     findOneAndUpdateAppointment,
+    find
 };

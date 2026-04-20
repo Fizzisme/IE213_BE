@@ -9,7 +9,7 @@ import { responseInterceptor } from '~/middlewares/responseInterceptor';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from '~/config/swagger';
 import cookieParser from 'cookie-parser';
-
+import { startAppointmentCron } from './jobs/appointment.cron';
 // Hàm bắt đầu server
 const START_SERVER = async () => {
     // Tạo ra app express
@@ -35,6 +35,7 @@ const START_SERVER = async () => {
     await connectDB();
 
     // Format lại api response
+    startAppointmentCron();
     app.use(responseInterceptor);
 
     // Sử dụng để lấy biến được lưu trong cookie
