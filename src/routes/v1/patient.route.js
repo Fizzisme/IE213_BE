@@ -119,7 +119,7 @@ Router.post('/', patientValidation.createPatient, patientController.createPatien
     .get('/services', serviceController.getAllServices)
     .patch('/appointments/:id/cancel', appointmentController.cancelMyAppointment)
     .patch('/appointments/:id/reschedule', appointmentController.rescheduleMyAppointment)
-    .get('/notifications/:userId', notificationController.getNotifications)
+    .get('/notifications/me', notificationController.getNotifications)
     .patch('/notifications/:notificationId/read', notificationController.markAsRead)
     .patch('/notifications/read-all', notificationController.markAllAsRead)
     .get('/notifications/unread/count/:userId', notificationController.getUnreadCount)

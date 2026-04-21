@@ -50,6 +50,7 @@ const cancelMyAppointment = async (appointmentId, patientId) => {
 };
 
 const rescheduleMyAppointment = async (appointmentId, patientId, data) => {
+    console.log()
     const updated = await appointmentModel.findOneAndUpdateAppointment(
         {
             _id: appointmentId,

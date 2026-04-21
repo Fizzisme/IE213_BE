@@ -57,7 +57,7 @@ const cancelMyAppointment = async (req, res) => {
         await notificationService.createNotification({
             senderId: null,
             senderModel: 'system',
-            receiverId: patient._id,
+            receiverId: req.user._id,
             receiverModel: 'users',
             event: 'APPOINTMENT_CANCELLED',
             title: 'Lịch khám đã hủy',
@@ -81,10 +81,28 @@ const cancelMyAppointment = async (req, res) => {
 
 const rescheduleMyAppointment = async (req, res) => {
     try {
+        console.log(req.body);
         const appointmentId = req.params.id;
         const patient = await patientModel.findByUserId(req.user._id);
         const patientId = patient._id;
         const result = await appointmentService.rescheduleMyAppointment(appointmentId, patientId, req.body);
+        // 2. Gửi thông báo sau khi đổi lịch thành công
+        await notificationService.createNotification({
+            senderId: null,
+            senderModel: 'system',
+            receiverId: req.user._id,
+            receiverModel: 'users',
+            event: 'APPOINTMENT_RESCHEDULED',
+            title: 'Lịch khám đã được đổi',
+            content: `Lịch khám của bạn đã được thay đổi sang ngày ${result.appointmentDateTime}.`,
+            refId: result._id,
+            refModel: 'appointments',
+            metadata: {
+                newDate: req.body.appointmentDateTime,
+                rescheduledAt: new Date(),
+            },
+        });
+        console.log(result);
         return res.status(200).json(result);
     } catch (e) {
         return res.status(e.statusCode || 500).json({
@@ -99,11 +117,4 @@ export const appointmentController = {
     rescheduleMyAppointment,
 };
 
-// cron auto cancel
-// await notificationService.createNotification({
-//     sender: null, // system
-//     receiver: patientId,
-//     type: 'APPOINTMENT_AUTO_CANCELLED',
-//     title: 'Lịch bị hủy tự động',
-//     content: 'Không có bác sĩ đúng giờ nên lịch đã bị hủy',
-// });
+

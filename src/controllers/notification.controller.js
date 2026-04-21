@@ -7,7 +7,7 @@ import { notificationService } from '../services/notification.service.js';
  */
 export const getNotifications = async (req, res) => {
     try {
-        const { userId } = req.params;
+        const userId  = req.user._id;
         const { limit = 10, cursor, isRead } = req.query;
 
         if (!userId) {

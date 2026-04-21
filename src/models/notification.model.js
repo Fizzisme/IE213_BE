@@ -44,6 +44,7 @@ const notificationSchema = new Schema(
                 'APPOINTMENT_CANCELLED',
                 'APPOINTMENT_REMINDER',
                 'APPOINTMENT_AUTO_CANCELLED',
+                'APPOINTMENT_RESCHEDULED',
                 'DOCTOR_ASSIGNED',
                 'SYSTEM',
             ],
