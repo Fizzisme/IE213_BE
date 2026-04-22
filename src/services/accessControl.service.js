@@ -1,9 +1,13 @@
 import { StatusCodes } from 'http-status-codes';
 import ApiError from '~/utils/ApiError';
 import { blockchainContracts } from '~/blockchain/contract';
-import { provider } from '~/blockchain/provider';
 import { auditLogModel } from '~/models/auditLog.model';
-import { userModel } from '~/models/user.model';
+import {
+    prepareGrantAccessTx,
+    prepareRevokeAccessTx,
+    prepareUpdateAccessTx,
+    verifyTransactionOnBlockchain,
+} from '~/utils/metaMaskTxBuilder';
 // import { notificationService } from '~/services/notification.service'; // REMOVED - not essential
 
 /**
@@ -13,15 +17,21 @@ import { userModel } from '~/models/user.model';
  * - Kiểm tra quyền truy cập
  */
 
-// Bệnh nhân cấp quyền truy cập cho bác sĩ hoặc lab tech
-const grantAccess = async (currentUser, data) => {
-    const { accessorAddress, level, durationHours, expiresAt } = data;
+const mapLevelToAccessLevel = (level) => {
+    if (level === 'SENSITIVE') return 3;
+    if (level === 'FULL') return 2;
+    throw new ApiError(StatusCodes.BAD_REQUEST, `Mức quyền không hợp lệ: ${level}. Chỉ chấp nhận FULL hoặc SENSITIVE`);
+};
 
-    if (!accessorAddress || !level) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu thông tin bắt buộc: accessorAddress, level');
-    }
+const mapAccessLevelToName = (level) => {
+    if (Number(level) === 3) return 'SENSITIVE';
+    if (Number(level) === 2) return 'FULL';
+    return 'UNKNOWN';
+};
 
-    // Feature 3: Support expiresAt (Unix timestamp) as alternative to durationHours
+const toHexChainId = (chainId) => `0x${Number(chainId).toString(16)}`;
+
+const normalizeDurationHours = (durationHours, expiresAt) => {
     let finalDurationHours = durationHours || 0;
     if (expiresAt) {
         const now = Math.floor(Date.now() / 1000);
@@ -31,82 +41,188 @@ const grantAccess = async (currentUser, data) => {
         finalDurationHours = Math.ceil((expiresAt - now) / 3600);
     }
 
+    return finalDurationHours;
+};
+
+const buildPrepareResponse = (action, preparedTx, details = {}) => {
+    const { unsignedTx, chainId, functionSignature } = preparedTx;
+
+    return {
+        message: 'Chuẩn bị giao dịch thành công. Hãy ký bằng ví frontend (MetaMask).',
+        action,
+        txRequest: {
+            to: unsignedTx.to,
+            data: unsignedTx.data,
+            value: unsignedTx.value || '0',
+            chainId: toHexChainId(chainId),
+        },
+        suggestedTx: {
+            from: unsignedTx.from,
+            gasLimit: unsignedTx.gasLimit,
+            gasPrice: unsignedTx.gasPrice,
+            nonce: unsignedTx.nonce,
+        },
+        details: {
+            functionSignature,
+            chainId: Number(chainId),
+            ...details,
+        },
+    };
+};
+
+const verifyConfirmedTxByUser = async (currentUser, txHash) => {
+    if (!txHash) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu txHash để xác nhận giao dịch');
+    }
+
+    const verification = await verifyTransactionOnBlockchain(txHash);
+
+    if (!verification.found) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy giao dịch trên blockchain');
+    }
+
+    if (!verification.confirmed) {
+        throw new ApiError(StatusCodes.CONFLICT, 'Giao dịch chưa được xác nhận trên blockchain');
+    }
+
+    if (verification.status !== 'SUCCESS') {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch thất bại trên blockchain');
+    }
+
+    const txFrom = verification.from?.toLowerCase();
+    const userWallet = currentUser.walletAddress?.toLowerCase();
+    if (!txFrom || !userWallet || txFrom !== userWallet) {
+        throw new ApiError(
+            StatusCodes.FORBIDDEN,
+            `Giao dịch không thuộc về user hiện tại. tx.from=${verification.from}, user.wallet=${currentUser.walletAddress}`
+        );
+    }
+
+    return verification;
+};
+
+const findContractEvent = (receipt, eventName, predicate) => {
+    const iface = blockchainContracts.read.accessControl.interface;
+    const matchedLog = receipt.logs?.find((log) => {
+        try {
+            const parsed = iface.parseLog(log);
+            if (parsed?.name !== eventName) return false;
+            return predicate(parsed.args);
+        } catch {
+            return false;
+        }
+    });
+
+    if (!matchedLog) return null;
+    return iface.parseLog(matchedLog);
+};
+
+// Bệnh nhân cấp quyền truy cập cho bác sĩ hoặc lab tech
+const grantAccess = async (currentUser, data) => {
+    const { accessorAddress, level, durationHours, expiresAt } = data;
+
+    if (!accessorAddress || !level) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu thông tin bắt buộc: accessorAddress, level');
+    }
+
+    const finalDurationHours = normalizeDurationHours(durationHours, expiresAt);
+
     // level: FULL hoặc SENSITIVE
-    const accessLevel = level === 'SENSITIVE' ? 3 : 2; // SENSITIVE:3, FULL:2
+    mapLevelToAccessLevel(level);
 
     try {
-        // ⭐ FIX: Use patient wallet instead of admin wallet
-        // Smart contract requires msg.sender to be the patient
-        if (!blockchainContracts.patient.accessControl) {
-            throw new ApiError(StatusCodes.BAD_REQUEST,
-                'Test patient wallet not configured. Add TEST_PATIENT_PRIVATE_KEY to .env.local');
-        }
-
-        // ✅ AUTO-REVOKE PATTERN: Check if access already exists
+        // Check existing grant to preserve business logic consistency
         try {
-            console.log(`📋 Checking existing access: patient=${currentUser.walletAddress}, accessor=${accessorAddress}`);
             const existingGrant = await blockchainContracts.read.accessControl.getAccessGrant(
                 currentUser.walletAddress,
                 accessorAddress
             );
 
             if (existingGrant.isActive) {
-                console.log('⚠️ Existing grant found, auto-revoking before granting new access...');
-                const revokeX = await blockchainContracts.patient.accessControl.revokeAccess(accessorAddress);
-                const revokeReceipt = await revokeX.wait();
-                if (!revokeReceipt || revokeReceipt.status !== 1) {
-                    throw new Error('Auto-revoke transaction failed');
-                }
-                console.log('✅ Auto-revoke successful:', revokeReceipt.hash);
-
-                // Wait a bit before granting new access to avoid race conditions
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                throw new ApiError(
+                    StatusCodes.BAD_REQUEST,
+                    'Accessor đang có quyền truy cập active. Vui lòng revoke trước khi cấp mới.'
+                );
             }
         } catch (checkErr) {
-            // If grant doesn't exist or other error, continue with grant
-            if (!checkErr.message?.includes('Grant not found')) {
-                console.warn('⚠️ Check existing grant warning:', checkErr.message);
+            if (checkErr instanceof ApiError) throw checkErr;
+
+            // Nếu chưa từng có grant thì vẫn cho phép prepare grant
+            if (!checkErr.message?.toLowerCase().includes('not found')) {
+                throw new ApiError(StatusCodes.BAD_REQUEST, `Không thể xác minh grant hiện tại: ${checkErr.message}`);
             }
         }
 
-        // ✅ NOW grant new access
-        const tx = await blockchainContracts.patient.accessControl.grantAccess(
+        const preparedTx = await prepareGrantAccessTx(
+            currentUser.walletAddress,
             accessorAddress,
-            accessLevel,
+            level,
             finalDurationHours
         );
-        const receipt = await tx.wait();
 
-        // Ghi audit log
-        await auditLogModel.createLog({
-            userId: currentUser._id,
-            walletAddress: currentUser.walletAddress,
-            action: 'GRANT_ACCESS',
-            entityType: 'ACCESS_CONTROL',
-            entityId: null,
-            txHash: receipt.hash,
-            status: 'SUCCESS',
-            details: {
-                note: `Patient granted ${level} access to ${accessorAddress} for ${finalDurationHours || 'unlimited'} hours`,
-                accessorAddress,
-                level,
-                durationHours: finalDurationHours,
-                expiresAt: expiresAt || 0,
-            },
+        return buildPrepareResponse('GRANT_ACCESS', preparedTx, {
+            accessorAddress,
+            level,
+            durationHours: finalDurationHours,
+            expiresAt: expiresAt || 0,
         });
-
-        // Feature 4: Send notification to doctor/accessor (REMOVED - not essential for workflow)
-        const expiresAtTimestamp = expiresAt || (finalDurationHours > 0 ? Math.floor(Date.now() / 1000) + (finalDurationHours * 3600) : 0);
-        // Notification removed - focus on core workflow instead
-        // await notificationService.sendAccessGrantedNotification(currentUser, accessorAddress, level, expiresAtTimestamp);
-
-        return {
-            message: 'Cấp quyền truy cập thành công',
-            txHash: receipt.hash,
-        };
     } catch (error) {
+        if (error instanceof ApiError) throw error;
         throw new ApiError(StatusCodes.BAD_REQUEST, `Cấp quyền thất bại: ${error.message}`);
     }
+};
+
+const confirmGrantAccess = async (currentUser, data) => {
+    const { txHash, accessorAddress, level, durationHours, expiresAt } = data;
+
+    if (!txHash || !accessorAddress) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu thông tin bắt buộc: txHash, accessorAddress');
+    }
+
+    const verification = await verifyConfirmedTxByUser(currentUser, txHash);
+    const receipt = await blockchainContracts.provider.getTransactionReceipt(txHash);
+
+    const event = findContractEvent(
+        receipt,
+        'AccessGranted',
+        (args) => args.patient.toLowerCase() === currentUser.walletAddress.toLowerCase()
+            && args.accessor.toLowerCase() === accessorAddress.toLowerCase()
+    );
+
+    if (!event) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Không tìm thấy event AccessGranted khớp với dữ liệu yêu cầu');
+    }
+
+    const eventLevel = Number(event.args.level);
+    const eventLevelName = mapAccessLevelToName(eventLevel);
+    const eventExpiresAt = Number(event.args.expiresAt);
+
+    await auditLogModel.createLog({
+        userId: currentUser._id,
+        walletAddress: currentUser.walletAddress,
+        action: 'GRANT_ACCESS',
+        entityType: 'ACCESS_CONTROL',
+        entityId: null,
+        txHash,
+        status: 'SUCCESS',
+        details: {
+            note: `Patient granted ${eventLevelName} access to ${accessorAddress}`,
+            accessorAddress,
+            level: level || eventLevelName,
+            levelOnChain: eventLevel,
+            durationHours: durationHours || 0,
+            expiresAt: expiresAt || eventExpiresAt,
+            blockNumber: verification.blockNumber,
+        },
+    });
+
+    return {
+        message: 'Cấp quyền truy cập thành công',
+        txHash,
+        blockNumber: verification.blockNumber,
+        level: eventLevelName,
+        expiresAt: eventExpiresAt,
+    };
 };
 
 // Bệnh nhân cập nhật quyền truy cập
@@ -117,28 +233,12 @@ const updateAccess = async (currentUser, data) => {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu thông tin bắt buộc: accessorAddress, level');
     }
 
-    // Feature 3: Support expiresAt (Unix timestamp) as alternative to durationHours
-    let finalDurationHours = durationHours || 0;
-    if (expiresAt) {
-        const now = Math.floor(Date.now() / 1000);
-        if (expiresAt <= now) {
-            throw new ApiError(StatusCodes.BAD_REQUEST, 'expiresAt phải lớn hơn thời gian hiện tại');
-        }
-        finalDurationHours = Math.ceil((expiresAt - now) / 3600);
-    }
-
-    const accessLevel = level === 'SENSITIVE' ? 3 : 2;
+    const finalDurationHours = normalizeDurationHours(durationHours, expiresAt);
+    mapLevelToAccessLevel(level);
 
     try {
-        // ⭐ FIX: Use patient wallet instead of admin wallet
-        if (!blockchainContracts.patient.accessControl) {
-            throw new ApiError(StatusCodes.BAD_REQUEST,
-                'Test patient wallet not configured. Add TEST_PATIENT_PRIVATE_KEY to .env.local');
-        }
-
-        // ✅ CHECK first: Verify access exists before updating
+        // CHECK first: Verify access exists before updating
         try {
-            console.log(`📋 Checking existing access before update: patient=${currentUser.walletAddress}, accessor=${accessorAddress}`);
             const existingGrant = await blockchainContracts.read.accessControl.getAccessGrant(
                 currentUser.walletAddress,
                 accessorAddress
@@ -152,43 +252,76 @@ const updateAccess = async (currentUser, data) => {
             throw new ApiError(StatusCodes.BAD_REQUEST, `Cannot verify existing access: ${checkErr.message}`);
         }
 
-        // ✅ NOW update access with validated level
-        const tx = await blockchainContracts.patient.accessControl.updateAccess(
+        const preparedTx = await prepareUpdateAccessTx(
+            currentUser.walletAddress,
             accessorAddress,
-            accessLevel,
+            level,
             finalDurationHours
         );
-        const receipt = await tx.wait();
 
-        await auditLogModel.createLog({
-            userId: currentUser._id,
-            walletAddress: currentUser.walletAddress,
-            action: 'UPDATE_ACCESS',
-            entityType: 'ACCESS_CONTROL',
-            entityId: null,
-            txHash: receipt.hash,
-            status: 'SUCCESS',
-            details: {
-                note: `Patient updated access for ${accessorAddress} to ${level}`,
-                accessorAddress,
-                level,
-                durationHours: finalDurationHours,
-                expiresAt: expiresAt || 0,
-            },
+        return buildPrepareResponse('UPDATE_ACCESS', preparedTx, {
+            accessorAddress,
+            level,
+            durationHours: finalDurationHours,
+            expiresAt: expiresAt || 0,
         });
-
-        // Feature 4: Send notification to doctor/accessor (REMOVED - not essential for workflow)
-        const expiresAtTimestamp = expiresAt || (finalDurationHours > 0 ? Math.floor(Date.now() / 1000) + (finalDurationHours * 3600) : 0);
-        // Notification removed - focus on core workflow instead
-        // await notificationService.sendAccessUpdatedNotification(currentUser, accessorAddress, level, expiresAtTimestamp);
-
-        return {
-            message: 'Cập nhật quyền truy cập thành công',
-            txHash: receipt.hash,
-        };
     } catch (error) {
+        if (error instanceof ApiError) throw error;
         throw new ApiError(StatusCodes.BAD_REQUEST, `Cập nhật quyền thất bại: ${error.message}`);
     }
+};
+
+const confirmUpdateAccess = async (currentUser, data) => {
+    const { txHash, accessorAddress, level, durationHours, expiresAt } = data;
+
+    if (!txHash || !accessorAddress) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu thông tin bắt buộc: txHash, accessorAddress');
+    }
+
+    const verification = await verifyConfirmedTxByUser(currentUser, txHash);
+    const receipt = await blockchainContracts.provider.getTransactionReceipt(txHash);
+
+    const event = findContractEvent(
+        receipt,
+        'AccessUpdated',
+        (args) => args.patient.toLowerCase() === currentUser.walletAddress.toLowerCase()
+            && args.accessor.toLowerCase() === accessorAddress.toLowerCase()
+    );
+
+    if (!event) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Không tìm thấy event AccessUpdated khớp với dữ liệu yêu cầu');
+    }
+
+    const eventLevel = Number(event.args.level);
+    const eventLevelName = mapAccessLevelToName(eventLevel);
+    const eventExpiresAt = Number(event.args.expiresAt);
+
+    await auditLogModel.createLog({
+        userId: currentUser._id,
+        walletAddress: currentUser.walletAddress,
+        action: 'UPDATE_ACCESS',
+        entityType: 'ACCESS_CONTROL',
+        entityId: null,
+        txHash,
+        status: 'SUCCESS',
+        details: {
+            note: `Patient updated access for ${accessorAddress} to ${eventLevelName}`,
+            accessorAddress,
+            level: level || eventLevelName,
+            levelOnChain: eventLevel,
+            durationHours: durationHours || 0,
+            expiresAt: expiresAt || eventExpiresAt,
+            blockNumber: verification.blockNumber,
+        },
+    });
+
+    return {
+        message: 'Cập nhật quyền truy cập thành công',
+        txHash,
+        blockNumber: verification.blockNumber,
+        level: eventLevelName,
+        expiresAt: eventExpiresAt,
+    };
 };
 
 // Bệnh nhân thu hồi quyền truy cập
@@ -200,40 +333,70 @@ const revokeAccess = async (currentUser, data) => {
     }
 
     try {
-        // ⭐ FIX: Use patient wallet instead of admin wallet
-        if (!blockchainContracts.patient.accessControl) {
-            throw new ApiError(StatusCodes.BAD_REQUEST,
-                'Test patient wallet not configured. Add TEST_PATIENT_PRIVATE_KEY to .env.local');
+        const existingGrant = await blockchainContracts.read.accessControl.getAccessGrant(
+            currentUser.walletAddress,
+            accessorAddress
+        );
+
+        if (!existingGrant.isActive) {
+            throw new ApiError(StatusCodes.NOT_FOUND, 'Grant không tồn tại hoặc đã bị thu hồi');
         }
 
-        const tx = await blockchainContracts.patient.accessControl.revokeAccess(accessorAddress);
-        const receipt = await tx.wait();
+        const preparedTx = await prepareRevokeAccessTx(
+            currentUser.walletAddress,
+            accessorAddress
+        );
 
-        await auditLogModel.createLog({
-            userId: currentUser._id,
-            walletAddress: currentUser.walletAddress,
-            action: 'REVOKE_ACCESS',
-            entityType: 'ACCESS_CONTROL',
-            entityId: null,
-            txHash: receipt.hash,
-            status: 'SUCCESS',
-            details: {
-                note: `Patient revoked access from ${accessorAddress}`,
-                accessorAddress,
-            },
+        return buildPrepareResponse('REVOKE_ACCESS', preparedTx, {
+            accessorAddress,
         });
-
-        // Feature 4: Send notification to doctor/accessor (REMOVED - not essential for workflow)
-        // Notification removed - focus on core workflow instead
-        // await notificationService.sendAccessRevokedNotification(currentUser, accessorAddress);
-
-        return {
-            message: 'Thu hồi quyền truy cập thành công',
-            txHash: receipt.hash,
-        };
     } catch (error) {
+        if (error instanceof ApiError) throw error;
         throw new ApiError(StatusCodes.BAD_REQUEST, `Thu hồi quyền thất bại: ${error.message}`);
     }
+};
+
+const confirmRevokeAccess = async (currentUser, data) => {
+    const { txHash, accessorAddress } = data;
+
+    if (!txHash || !accessorAddress) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu thông tin bắt buộc: txHash, accessorAddress');
+    }
+
+    const verification = await verifyConfirmedTxByUser(currentUser, txHash);
+    const receipt = await blockchainContracts.provider.getTransactionReceipt(txHash);
+
+    const event = findContractEvent(
+        receipt,
+        'AccessRevoked',
+        (args) => args.patient.toLowerCase() === currentUser.walletAddress.toLowerCase()
+            && args.accessor.toLowerCase() === accessorAddress.toLowerCase()
+    );
+
+    if (!event) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Không tìm thấy event AccessRevoked khớp với dữ liệu yêu cầu');
+    }
+
+    await auditLogModel.createLog({
+        userId: currentUser._id,
+        walletAddress: currentUser.walletAddress,
+        action: 'REVOKE_ACCESS',
+        entityType: 'ACCESS_CONTROL',
+        entityId: null,
+        txHash,
+        status: 'SUCCESS',
+        details: {
+            note: `Patient revoked access from ${accessorAddress}`,
+            accessorAddress,
+            blockNumber: verification.blockNumber,
+        },
+    });
+
+    return {
+        message: 'Thu hồi quyền truy cập thành công',
+        txHash,
+        blockNumber: verification.blockNumber,
+    };
 };
 
 // Kiểm tra quyền truy cập
@@ -363,8 +526,11 @@ const getPatientGrants = async (currentUser, page = 1, limit = 50) => {
 
 export const accessControlService = {
     grantAccess,
+    confirmGrantAccess,
     updateAccess,
+    confirmUpdateAccess,
     revokeAccess,
+    confirmRevokeAccess,
     checkAccess,
     getAccessGrant,
     getPatientGrants,

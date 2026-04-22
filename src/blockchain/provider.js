@@ -27,7 +27,7 @@ const patientWallet = env.TEST_PATIENT_PRIVATE_KEY
     : null;
 
 if (patientWallet) {
-    console.log('✅ Test Patient Wallet connected:', patientWallet.address);
+    console.log('Test Patient Wallet connected:', patientWallet.address);
 }
 
 // Test Doctor Wallet — dùng cho testing doctor operations (create lab order, etc)
@@ -35,12 +35,12 @@ let doctorWallet = null;
 try {
     if (env.TEST_DOCTOR_PRIVATE_KEY) {
         doctorWallet = new ethers.Wallet(env.TEST_DOCTOR_PRIVATE_KEY, provider);
-        console.log('✅ Test Doctor Wallet connected:', doctorWallet.address);
+        console.log('Test Doctor Wallet connected:', doctorWallet.address);
     } else {
-        console.warn('⚠️  TEST_DOCTOR_PRIVATE_KEY not configured');
+        console.warn('TEST_DOCTOR_PRIVATE_KEY not configured');
     }
 } catch (error) {
-    console.error('❌ FAILED to initialize Doctor Wallet:', error.message);
+    console.error(' FAILED to initialize Doctor Wallet:', error.message);
     console.error('   TEST_DOCTOR_PRIVATE_KEY value:', env.TEST_DOCTOR_PRIVATE_KEY);
     console.error('   Make sure private key format is correct (64 hex chars without 0x prefix)');
     doctorWallet = null;
@@ -52,7 +52,7 @@ const labTechWallet = env.TEST_LAB_PRIVATE_KEY
     : null;
 
 if (labTechWallet) {
-    console.log('✅ Test Lab Tech Wallet connected:', labTechWallet.address);
+    console.log('Test Lab Tech Wallet connected:', labTechWallet.address);
 }
 
 export { provider, adminWallet, patientWallet, doctorWallet, labTechWallet };

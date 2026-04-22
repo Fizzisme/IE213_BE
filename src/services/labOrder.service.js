@@ -140,7 +140,7 @@ const createLabOrder = async (data, currentUser) => {
     validateWalletAddress(patientAddress, 'Patient address');
 
     // Kiểm tra recordType hợp lệ
-    if (!RECORD_TYPE_MAP.hasOwnProperty(recordType)) {
+    if (!Object.hasOwn(RECORD_TYPE_MAP, recordType)) {
         throw new ApiError(StatusCodes.BAD_REQUEST, `recordType không hợp lệ: ${recordType}. Chỉ chấp nhận: GENERAL, HIV_TEST, DIABETES_TEST, LAB_RESULT`);
     }
 
@@ -303,7 +303,7 @@ const createLabOrder = async (data, currentUser) => {
             );
         }
 
-        console.log(`[Lab Order] Kiểm tra hợp lệ - Sẵn sàng gọi blockchain`);
+        console.log('[Lab Order] Kiểm tra hợp lệ - Sẵn sàng gọi blockchain');
         console.log(`[Lab Order] Gọi blockchain: addRecord(${patientAddress}, ${recordTypeNum}, ${requiredLevel}, ${orderHash})`);
 
         let tx;
@@ -332,7 +332,7 @@ const createLabOrder = async (data, currentUser) => {
             ]);
             console.log(`[Lab Order] Giao dịch đã xác nhận: ${receipt.hash}`);
         } catch (waitError) {
-            console.error(`[Lab Order] Chờ giao dịch thất bại:`, waitError.message);
+            console.error('[Lab Order] Chờ giao dịch thất bại:', waitError.message);
             throw waitError;
         }
 
@@ -396,9 +396,9 @@ const createLabOrder = async (data, currentUser) => {
         ],
     });
 
-    // 🔥 [EXPLICIT LINKING] Link lab order to medical record
-    // ✅ medicalRecordId came from doctor's explicit choice - no guessing
-    // ✅ If this fails, patient doesn't lose the lab order, just loses the link
+    // [EXPLICIT LINKING] Link lab order to medical record
+    // medicalRecordId came from doctor's explicit choice - no guessing
+    // If this fails, patient doesn't lose the lab order, just loses the link
     //    (but record is locked in validation above, so should not happen)
     try {
         const { medicalRecordModel } = await import('~/models/medicalRecord.model');
@@ -416,7 +416,7 @@ const createLabOrder = async (data, currentUser) => {
         // [SỬA TẬP TRUNG] Sử dụng medicalRecordService.updateStatus() để đảm bảo xác thực nhất quán
         await medicalRecordService.updateStatus(medicalRecordId, 'WAITING_RESULT');
     } catch (linkErr) {
-        console.error(`❌ [EXPLICIT LINK] Failed: ${linkErr.message}`);
+        console.error(`[EXPLICIT LINK] Failed: ${linkErr.message}`);
         // Đừng throw - lab order đã được tạo trên blockchain
         // Just log and continue (eventual consistency)
     }
@@ -682,7 +682,7 @@ const cancelLabOrder = async (labOrderId, reason = 'Hủy yêu cầu') => {
 
         const previousStatus = labOrder.sampleStatus;
 
-        // 3️⃣ Update status thành CANCELLED
+        // 3 Update status thành CANCELLED
         const updatedOrder = await labOrderModel.LabOrderModel.findByIdAndUpdate(
             labOrderId,
             {
@@ -700,12 +700,12 @@ const cancelLabOrder = async (labOrderId, reason = 'Hủy yêu cầu') => {
             { new: true }
         );
 
-        console.log(`✅ Lab order ${labOrderId} đã cancel (${previousStatus} → CANCELLED)`);
+        console.log(`Lab order ${labOrderId} đã cancel (${previousStatus} → CANCELLED)`);
 
-        // 4️⃣ KHÔNG xóa khỏi medical record - chỉ đổi status
+        // 4️KHÔNG xóa khỏi medical record - chỉ đổi status
         // Vì order này vẫn có thể được xem lịch sử
 
-        // 5️⃣ Log audit event
+        // 5️Log audit event
         try {
             await auditLogModel.AuditLogModel.create({
                 entityType: 'LAB_ORDER',
@@ -721,7 +721,7 @@ const cancelLabOrder = async (labOrderId, reason = 'Hủy yêu cầu') => {
                 timestamp: new Date(),
             });
         } catch (auditErr) {
-            console.warn(`⚠️  Lỗi ghi audit log:`, auditErr.message);
+            console.warn(`Lỗi ghi audit log:`, auditErr.message);
         }
 
         return {
@@ -733,7 +733,7 @@ const cancelLabOrder = async (labOrderId, reason = 'Hủy yêu cầu') => {
             reason,
         };
     } catch (error) {
-        console.error(`❌ Error canceling lab order:`, error.message);
+        console.error(`Error canceling lab order:`, error.message);
         throw error;
     }
 };
@@ -788,7 +788,7 @@ const assignLabOrderToTech = async (currentUser, labOrderId, labTechId) => {
         },
     });
 
-    console.log(`[Lab Order] ✅ Assigned order ${labOrderId} to lab tech ${labTech.name}`);
+    console.log(`[Lab Order] Assigned order ${labOrderId} to lab tech ${labTech.name}`);
 
     return {
         message: 'Phân công order thành công',

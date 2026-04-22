@@ -36,6 +36,16 @@ const grantAccess = async (req, res, next) => {
     }
 };
 
+// Bệnh nhân xác nhận giao dịch cấp quyền sau khi ký trên frontend wallet
+const confirmGrantAccess = async (req, res, next) => {
+    try {
+        const result = await accessControlService.confirmGrantAccess(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
 // Bệnh nhân cập nhật quyền truy cập
 const updateAccess = async (req, res, next) => {
     try {
@@ -46,10 +56,30 @@ const updateAccess = async (req, res, next) => {
     }
 };
 
+// Bệnh nhân xác nhận giao dịch cập nhật quyền sau khi ký trên frontend wallet
+const confirmUpdateAccess = async (req, res, next) => {
+    try {
+        const result = await accessControlService.confirmUpdateAccess(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
 // Bệnh nhân thu hồi quyền truy cập
 const revokeAccess = async (req, res, next) => {
     try {
         const result = await accessControlService.revokeAccess(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+// Bệnh nhân xác nhận giao dịch thu hồi quyền sau khi ký trên frontend wallet
+const confirmRevokeAccess = async (req, res, next) => {
+    try {
+        const result = await accessControlService.confirmRevokeAccess(req.user, req.body);
         res.status(StatusCodes.OK).json(result);
     } catch (e) {
         next(e);
@@ -93,8 +123,11 @@ const getMyGrants = async (req, res, next) => {
 
 export const accessControlController = {
     grantAccess,
+    confirmGrantAccess,
     updateAccess,
+    confirmUpdateAccess,
     revokeAccess,
+    confirmRevokeAccess,
     checkAccess,
     getAccessGrant,
     getMyGrants,

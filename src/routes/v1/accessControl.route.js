@@ -130,6 +130,7 @@ Router.use(verifyToken);
  *         description: Không phải bệnh nhân
  */
 Router.post('/grant', authorizeRoles('PATIENT'), accessControlController.grantAccess);
+Router.post('/grant/confirm', authorizeRoles('PATIENT'), accessControlController.confirmGrantAccess);
 
 /**
  * @swagger
@@ -175,6 +176,7 @@ Router.post('/grant', authorizeRoles('PATIENT'), accessControlController.grantAc
  *         description: Không phải bệnh nhân
  */
 Router.patch('/update', authorizeRoles('PATIENT'), accessControlController.updateAccess);
+Router.patch('/update/confirm', authorizeRoles('PATIENT'), accessControlController.confirmUpdateAccess);
 
 /**
  * @swagger
@@ -208,6 +210,7 @@ Router.patch('/update', authorizeRoles('PATIENT'), accessControlController.updat
  *         description: Không phải bệnh nhân
  */
 Router.post('/revoke', authorizeRoles('PATIENT'), accessControlController.revokeAccess);
+Router.post('/revoke/confirm', authorizeRoles('PATIENT'), accessControlController.confirmRevokeAccess);
 
 /**
  * @swagger
