@@ -115,7 +115,8 @@ Router.get('/', patientRecordController.getMyRecords);
  *       - Lớp 1: Order metadata (orderHash)
  *       - Lớp 2: Lab result (labResultHash)
  *       - Lớp 3: Clinical interpretation (interpretationHash)
- *       Sau đó verify keccak256(data) == hash on-chain. Nếu không khớp → dữ liệu bị tamper.
+ *       Endpoint này trả dữ liệu + trạng thái kiểm tra integrity từ bản ghi hiện có.
+ *       Nếu cần verify hash on-chain một cách tường minh, dùng `/v1/patient-records/verify`.
  *     tags: [Patient Records]
  *     security:
  *       - bearerAuth: []

@@ -5,7 +5,7 @@ import { patientValidation } from '~/validations/patient.validation';
 import { patientController } from '~/controllers/patient.controller';
 
 const Router = express.Router();
-// Tất cả route /admin/* đều phải qua verifyToken + requireAdmin
+// Tất cả route /patients/* đều phải qua verifyToken + require PATIENT role
 Router.use(verifyToken, authorizeRoles('PATIENT'));
 
 /**
@@ -40,7 +40,7 @@ Router.use(verifyToken, authorizeRoles('PATIENT'));
 
 /**
  * @swagger
- * v1/patients:
+ * /v1/patients:
  *   post:
  *     summary: Tạo thông tin bệnh nhân mới
  *     tags: [Patient]
@@ -59,7 +59,7 @@ Router.use(verifyToken, authorizeRoles('PATIENT'));
 Router.post('/', patientValidation.createPatient, patientController.createPatient)
     /**
      * @swagger
-     * v1/patients/me:
+     * /v1/patients/me:
      *   get:
      *     summary: Lấy thông tin hồ sơ bệnh nhân của chính người dùng
      *     tags: [Patient]

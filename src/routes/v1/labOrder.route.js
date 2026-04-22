@@ -138,7 +138,7 @@ const Router = express.Router();
  *                   type: object
  *                   description: Gợi ý gas/nonce để frontend tham khảo
  *                 details:
- *                   type: string
+ *                   type: object
  *                   description: Thông tin nghiệp vụ để frontend gắn lại lúc confirm
  *       400:
  *         description: Lỗi dữ liệu đầu vào, chưa được cấp quyền, hoặc blockchain error
@@ -160,6 +160,31 @@ Router.post('/', verifyToken, authorizeRoles('DOCTOR'), labOrderController.creat
  *     tags: [LabOrder]
  *     security:
  *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             allOf:
+ *               - $ref: '#/components/schemas/CreateLabOrderRequest'
+ *               - type: object
+ *                 required:
+ *                   - txHash
+ *                 properties:
+ *                   txHash:
+ *                     type: string
+ *                     example: "0xabc123def456..."
+ *     responses:
+ *       201:
+ *         description: Xác nhận tạo lab order thành công
+ *       400:
+ *         description: Dữ liệu hoặc txHash không hợp lệ
+ *       403:
+ *         description: Tx không thuộc wallet bác sĩ hiện tại hoặc không đúng quyền
+ *       404:
+ *         description: Không tìm thấy transaction data
+ *       409:
+ *         description: Giao dịch chưa được xác nhận trên blockchain
  */
 Router.post('/confirm', verifyToken, authorizeRoles('DOCTOR'), labOrderController.confirmCreateLabOrder);
 
@@ -212,9 +237,31 @@ Router.patch('/:id/consent', verifyToken, authorizeRoles('PATIENT'), ehrWorkflow
  * /v1/lab-orders/{id}/consent/confirm:
  *   patch:
  *     summary: Xác nhận đồng ý xét nghiệm sau khi MetaMask ký
+ *     description: Frontend gửi `txHash` sau khi PATIENT ký giao dịch consent qua MetaMask.
  *     tags: [LabOrder]
  *     security:
  *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - txHash
+ *             properties:
+ *               txHash:
+ *                 type: string
+ *                 example: "0xabc123def456..."
+ *     responses:
+ *       200:
+ *         description: Xác nhận đồng ý xét nghiệm thành công
+ *       400:
+ *         description: txHash không hợp lệ hoặc order không đúng trạng thái
+ *       403:
+ *         description: Tx không thuộc patient hiện tại
+ *       409:
+ *         description: Giao dịch chưa được xác nhận trên blockchain
  */
 Router.patch('/:id/consent/confirm', verifyToken, authorizeRoles('PATIENT'), ehrWorkflowController.confirmConsentToOrder);
 
@@ -266,9 +313,31 @@ Router.patch('/:id/receive', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflo
  * /v1/lab-orders/{id}/receive/confirm:
  *   patch:
  *     summary: Xác nhận tiếp nhận order sau khi MetaMask ký
+ *     description: Frontend gửi `txHash` sau khi LAB_TECH ký giao dịch receive qua MetaMask.
  *     tags: [LabOrder]
  *     security:
  *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - txHash
+ *             properties:
+ *               txHash:
+ *                 type: string
+ *                 example: "0xabc123def456..."
+ *     responses:
+ *       200:
+ *         description: Xác nhận tiếp nhận order thành công
+ *       400:
+ *         description: txHash không hợp lệ hoặc order không đúng trạng thái
+ *       403:
+ *         description: Tx không thuộc lab tech hiện tại
+ *       409:
+ *         description: Giao dịch chưa được xác nhận trên blockchain
  */
 Router.patch('/:id/receive/confirm', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflowController.confirmReceiveOrder);
 
@@ -342,9 +411,33 @@ Router.patch('/:id/post-result', verifyToken, authorizeRoles('LAB_TECH'), ehrWor
  * /v1/lab-orders/{id}/post-result/confirm:
  *   patch:
  *     summary: Xác nhận post kết quả sau khi MetaMask ký
+ *     description: Frontend gửi lại payload kết quả + `txHash` để backend verify và ghi DB/audit.
  *     tags: [LabOrder]
  *     security:
  *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             allOf:
+ *               - $ref: '#/components/schemas/PostLabResultRequest'
+ *               - type: object
+ *                 required:
+ *                   - txHash
+ *                 properties:
+ *                   txHash:
+ *                     type: string
+ *                     example: "0xabc123def456..."
+ *     responses:
+ *       200:
+ *         description: Xác nhận post kết quả thành công
+ *       400:
+ *         description: Payload hoặc txHash không hợp lệ
+ *       403:
+ *         description: Tx không thuộc lab tech hiện tại
+ *       409:
+ *         description: Giao dịch chưa được xác nhận trên blockchain
  */
 Router.patch('/:id/post-result/confirm', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflowController.confirmPostLabResult);
 
@@ -427,9 +520,33 @@ Router.patch('/:id/interpretation', verifyToken, authorizeRoles('DOCTOR'), ehrWo
  * /v1/lab-orders/{id}/interpretation/confirm:
  *   patch:
  *     summary: Xác nhận thêm diễn giải sau khi MetaMask ký
+ *     description: Frontend gửi payload diễn giải + `txHash` để backend verify và cập nhật trạng thái.
  *     tags: [LabOrder]
  *     security:
  *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             allOf:
+ *               - $ref: '#/components/schemas/ClinicalInterpretationRequest'
+ *               - type: object
+ *                 required:
+ *                   - txHash
+ *                 properties:
+ *                   txHash:
+ *                     type: string
+ *                     example: "0xabc123def456..."
+ *     responses:
+ *       200:
+ *         description: Xác nhận thêm diễn giải thành công
+ *       400:
+ *         description: Payload hoặc txHash không hợp lệ
+ *       403:
+ *         description: Tx không thuộc bác sĩ hiện tại
+ *       409:
+ *         description: Giao dịch chưa được xác nhận trên blockchain
  */
 Router.patch('/:id/interpretation/confirm', verifyToken, authorizeRoles('DOCTOR'), ehrWorkflowController.confirmClinicalInterpretation);
 
@@ -482,9 +599,31 @@ Router.patch('/:id/complete', verifyToken, authorizeRoles('DOCTOR'), ehrWorkflow
  * /v1/lab-orders/{id}/complete/confirm:
  *   patch:
  *     summary: Xác nhận chốt hồ sơ sau khi MetaMask ký
+ *     description: Frontend gửi `txHash` sau khi DOCTOR ký giao dịch complete qua MetaMask.
  *     tags: [LabOrder]
  *     security:
  *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - txHash
+ *             properties:
+ *               txHash:
+ *                 type: string
+ *                 example: "0xabc123def456..."
+ *     responses:
+ *       200:
+ *         description: Xác nhận chốt hồ sơ thành công
+ *       400:
+ *         description: txHash không hợp lệ hoặc order không đúng trạng thái
+ *       403:
+ *         description: Tx không thuộc bác sĩ hiện tại
+ *       409:
+ *         description: Giao dịch chưa được xác nhận trên blockchain
  */
 Router.patch('/:id/complete/confirm', verifyToken, authorizeRoles('DOCTOR'), ehrWorkflowController.confirmCompleteRecord);
 

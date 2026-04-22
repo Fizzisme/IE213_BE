@@ -249,11 +249,7 @@ Router
     *         description: "❌ Unauthorized - Missing or invalid JWT token"
     *       403:
     *         description: "❌ Forbidden - User is not DOCTOR role"
-    */
-   .get('/medical-records', fetchGrantedPatients, medicalRecordController.getAll)
-   /**
-    * @swagger
-       * /v1/doctors/patients:
+    * /v1/doctors/patients:
     *   get:
     *     summary: Lấy danh sách tất cả bệnh nhân
     *     tags: [DOCTOR]
@@ -318,7 +314,7 @@ Router
    .get('/patients', patientController.getAll)
    /**
     * @swagger
-       * /v1/doctors/patients/{patientId}:
+    * /v1/doctors/patients/{patientId}:
     *   get:
     *     summary: Lấy thông tin chi tiết bệnh nhân theo ID
     *     tags: [DOCTOR]
@@ -380,14 +376,15 @@ Router
    .get('/patients/:patientId', patientController.getPatientById)
    /**
     * @swagger
-       * /v1/doctors/patients/{patientId}/medical-records:
+    * /v1/doctors/patients/{patientId}/medical-records:
     *   post:
-    *     summary: Bác sĩ tạo hồ sơ bệnh án (Step 4)
+    *     summary: Bác sĩ tạo hồ sơ bệnh án
     *     tags: [DOCTOR]
     *     description: |
     *       Bác sĩ tạo hồ sơ bệnh án cho bệnh nhân sau khi khám.
     *       Điều kiện tiên quyết: Bệnh nhân phải cấp quyền truy cập cho bác sĩ này.
-    *       Hồ sơ sẽ được lưu vào MongoDB + blockchain với status = CREATED.
+    *       Hồ sơ được lưu off-chain trong MongoDB với status = CREATED.
+    *       Việc ghi blockchain chỉ xảy ra ở flow lab-order prepare/confirm riêng.
     *     security:
     *       - bearerAuth: []
     *     parameters:

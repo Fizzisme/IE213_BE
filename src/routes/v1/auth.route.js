@@ -192,14 +192,8 @@ Router.post('/refresh-token', authController.refreshAccessToken);
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 statusCode:
- *                   type: number
- *                   example: 200
- *                 message:
- *                   type: string
- *                   example: Logout thành công
+ *               type: string
+ *               example: "Đăng xuất thành công"
  *       401:
  *         description: Unauthorized
  *       500:
