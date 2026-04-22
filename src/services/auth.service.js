@@ -115,15 +115,8 @@ const verifyWalletLogin = async (walletAddress, signature) => {
             ].filter(Boolean),
         });
 
-        // Gọi registerPatient() on-chain để đăng ký role PATIENT trên blockchain
-        try {
-            const tx = await blockchainContracts.admin.accountManager.registerPatient();
-            await tx.wait();
-        } catch (blockchainError) {
-            // Nếu gọi blockchain thất bại, vẫn cho phép đăng ký off-chain
-            // nhưng ghi log cảnh báo
-            console.error('Blockchain registerPatient failed:', blockchainError.message);
-        }
+        // KHÔNG gọi registerPatient() on-chain tại backend.
+        // Patient sẽ tự ký MetaMask qua flow prepare/confirm để đảm bảo non-custodial.
     }
 
     await auditLogModel.createLog({

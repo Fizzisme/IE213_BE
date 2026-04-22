@@ -41,14 +41,14 @@ const buildUnsignedTx = async (fromAddress, toAddress, encodedData) => {
 
     return {
         unsignedTx: {
-            to:       toAddress,
-            from:     fromAddress,
-            data:     encodedData,
+            to: toAddress,
+            from: fromAddress,
+            data: encodedData,
             nonce,
             gasLimit: DEFAULT_GAS_LIMIT,
             gasPrice: feeData.gasPrice ? feeData.gasPrice.toString() : '0',
-            chainId:  network.chainId,
-            value:    '0',
+            chainId: network.chainId,
+            value: '0',
         },
         nonce,
         chainId: network.chainId,
@@ -92,9 +92,9 @@ export const prepareConsentTx = async (patientAddress, recordId) => {
             unsignedTx,
             nonce,
             chainId,
-            contractAddress:   ehrManager.target,
+            contractAddress: ehrManager.target,
             functionSignature: 'updateRecordStatus(uint256,uint8)',
-            expectedStatus:    1,
+            expectedStatus: 1,
         }
     } catch (err) {
         if (err instanceof ApiError) throw err
@@ -139,7 +139,7 @@ export const prepareGrantAccessTx = async (patientAddress, accessorAddress, leve
             unsignedTx,
             nonce,
             chainId,
-            contractAddress:   accessControl.target,
+            contractAddress: accessControl.target,
             functionSignature: 'grantAccess(address,uint8,uint64)',
             accessorAddress,
             accessLevel,
@@ -183,7 +183,7 @@ export const prepareRevokeAccessTx = async (patientAddress, accessorAddress) => 
             unsignedTx,
             nonce,
             chainId,
-            contractAddress:   accessControl.target,
+            contractAddress: accessControl.target,
             functionSignature: 'revokeAccess(address)',
             accessorAddress,
         }
@@ -229,7 +229,7 @@ export const prepareUpdateAccessTx = async (patientAddress, accessorAddress, lev
             unsignedTx,
             nonce,
             chainId,
-            contractAddress:   accessControl.target,
+            contractAddress: accessControl.target,
             functionSignature: 'updateAccess(address,uint8,uint64)',
             accessorAddress,
             accessLevel,
@@ -285,7 +285,7 @@ export const prepareAddRecordTx = async (doctorAddress, patientAddress, recordTy
             unsignedTx,
             nonce,
             chainId,
-            contractAddress:   ehrManager.target,
+            contractAddress: ehrManager.target,
             functionSignature: 'addRecord(address,uint8,uint8,bytes32)',
         }
     } catch (err) {
@@ -332,7 +332,7 @@ export const prepareInterpretationTx = async (doctorAddress, recordId, interpret
             unsignedTx,
             nonce,
             chainId,
-            contractAddress:   ehrManager.target,
+            contractAddress: ehrManager.target,
             functionSignature: 'addClinicalInterpretation(uint256,bytes32)',
         }
     } catch (err) {
@@ -375,9 +375,9 @@ export const prepareCompleteTx = async (doctorAddress, recordId) => {
             unsignedTx,
             nonce,
             chainId,
-            contractAddress:   ehrManager.target,
+            contractAddress: ehrManager.target,
             functionSignature: 'updateRecordStatus(uint256,uint8)',
-            expectedStatus:    5,
+            expectedStatus: 5,
         }
     } catch (err) {
         if (err instanceof ApiError) throw err
@@ -422,9 +422,9 @@ export const prepareReceiveOrderTx = async (labTechAddress, recordId) => {
             unsignedTx,
             nonce,
             chainId,
-            contractAddress:   ehrManager.target,
+            contractAddress: ehrManager.target,
             functionSignature: 'updateRecordStatus(uint256,uint8)',
-            expectedStatus:    2,
+            expectedStatus: 2,
         }
     } catch (err) {
         if (err instanceof ApiError) throw err
@@ -470,7 +470,7 @@ export const preparePostResultTx = async (labTechAddress, recordId, labResultHas
             unsignedTx,
             nonce,
             chainId,
-            contractAddress:   ehrManager.target,
+            contractAddress: ehrManager.target,
             functionSignature: 'postLabResult(uint256,bytes32)',
         }
     } catch (err) {
@@ -515,7 +515,7 @@ export const prepareAddDoctorTx = async (adminAddress, doctorAddress) => {
             unsignedTx,
             nonce,
             chainId,
-            contractAddress:   accountManager.target,
+            contractAddress: accountManager.target,
             functionSignature: 'addDoctor(address)',
             doctorAddress,
         }
@@ -557,7 +557,7 @@ export const prepareAddLabTechTx = async (adminAddress, labTechAddress) => {
             unsignedTx,
             nonce,
             chainId,
-            contractAddress:   accountManager.target,
+            contractAddress: accountManager.target,
             functionSignature: 'addLabTech(address)',
             labTechAddress,
         }
@@ -603,7 +603,7 @@ export const prepareRegisterPatientTx = async (patientAddress) => {
             unsignedTx,
             nonce,
             chainId,
-            contractAddress:   accountManager.target,
+            contractAddress: accountManager.target,
             functionSignature: 'registerPatient()',
         }
     } catch (err) {
@@ -633,7 +633,7 @@ export const verifyAndBroadcastSignedTx = async (signedTx, expectedSignerAddress
         }
 
         const normalizedRecovered = ethers.getAddress(txObject.from)
-        const normalizedExpected  = ethers.getAddress(expectedSignerAddress)
+        const normalizedExpected = ethers.getAddress(expectedSignerAddress)
 
         if (normalizedRecovered !== normalizedExpected) {
             throw new ApiError(
@@ -664,13 +664,13 @@ export const verifyAndBroadcastSignedTx = async (signedTx, expectedSignerAddress
         console.log(`[${txContext}] Confirmed — block: ${receipt.blockNumber}, gas: ${receipt.gasUsed}`)
 
         return {
-            txHash:           receipt.hash,
-            blockNumber:      receipt.blockNumber,
-            gasUsed:          receipt.gasUsed?.toString() || '0',
-            status:           'SUCCESS',
-            from:             normalizedRecovered,
-            to:               receipt.to,
-            confirmation:     1,
+            txHash: receipt.hash,
+            blockNumber: receipt.blockNumber,
+            gasUsed: receipt.gasUsed?.toString() || '0',
+            status: 'SUCCESS',
+            from: normalizedRecovered,
+            to: receipt.to,
+            confirmation: 1,
         }
     } catch (err) {
         console.error(`[${txContext}] Thất bại:`, err.message)
@@ -705,25 +705,25 @@ export const verifyTransactionOnBlockchain = async (txHash) => {
         if (!receipt) {
             // Tx tồn tại nhưng chưa được mine
             return {
-                found:     true,
+                found: true,
                 confirmed: false,
                 txHash,
-                from:      tx.from,
-                to:        tx.to,
+                from: tx.from,
+                to: tx.to,
             }
         }
 
         console.log(`[verifyTx] Confirmed — block: ${receipt.blockNumber}, from: ${receipt.from}`)
 
         return {
-            found:       true,
-            confirmed:   true,
-            txHash:      receipt.hash,
+            found: true,
+            confirmed: true,
+            txHash: receipt.hash,
             blockNumber: receipt.blockNumber,
-            from:        receipt.from,
-            to:          receipt.to,
-            gasUsed:     receipt.gasUsed?.toString() || '0',
-            status:      receipt.status === 1 ? 'SUCCESS' : 'FAILED',
+            from: receipt.from,
+            to: receipt.to,
+            gasUsed: receipt.gasUsed?.toString() || '0',
+            status: receipt.status === 1 ? 'SUCCESS' : 'FAILED',
         }
     } catch (err) {
         console.error('[verifyTx] Thất bại:', err.message)

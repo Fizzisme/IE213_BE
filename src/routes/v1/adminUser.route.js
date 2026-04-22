@@ -274,6 +274,12 @@ Router.post(
     adminController.createDoctor
 );
 
+Router.post(
+    '/users/create-doctor/confirm',
+    adminUserValidation.createDoctor,
+    adminController.confirmCreateDoctor
+);
+
 /**
  * @swagger
  * /v1/admins/users/create-labtech:
@@ -349,6 +355,12 @@ Router.post(
     '/users/create-labtech',
     adminUserValidation.createLabTech,
     adminController.createLabTech
+);
+
+Router.post(
+    '/users/create-labtech/confirm',
+    adminUserValidation.createLabTech,
+    adminController.confirmCreateLabTech
 );
 
 /**
@@ -484,6 +496,11 @@ Router.delete('/users/:id/soft-delete', adminUserController.softDeleteUser);
 Router.post(
     '/patients/:patientId/register-blockchain',
     adminController.registerPatientBlockchain
+);
+
+Router.post(
+    '/patients/:patientId/register-blockchain/confirm',
+    adminController.confirmRegisterPatientBlockchain
 );
 
 export const adminUserRoute = Router;

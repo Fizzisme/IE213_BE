@@ -4,9 +4,9 @@
 // ═════════════════════════════════════════════════════════════════════════════════
 //
 // This controller handles ADMIN-ONLY privileged operations:
-// ✅ createDoctor - Admin directly creates doctor accounts (no PENDING approval)
-// ✅ createLabTech - Admin directly creates lab tech accounts (no PENDING approval)
-// ✅ registerPatientBlockchain - Admin registers patients on blockchain
+// createDoctor - Admin directly creates doctor accounts (no PENDING approval)
+// createLabTech - Admin directly creates lab tech accounts (no PENDING approval)
+// registerPatientBlockchain - Admin registers patients on blockchain
 //
 // NOTE: User management operations (approve, reject, verify, soft-delete) are in
 // adminUserController.js - this follows separation of concerns principle
@@ -18,16 +18,36 @@ import { StatusCodes } from 'http-status-codes';
 // POST /admin/users/create-doctor - Admin tạo doctor trực tiếp
 const createDoctor = async (req, res, next) => {
     try {
-        const result = await adminService.createDoctor({
+        const result = await adminService.prepareCreateDoctor({
+            adminWalletAddress: req.user.walletAddress,
             email: req.body.email,
             password: req.body.password,
             nationId: req.body.nationId,
             walletAddress: req.body.walletAddress,
-            adminId: req.user._id,
+        });
+        res.status(StatusCodes.OK).json({
+            statusCode: StatusCodes.OK,
+            message: result.message,
+            data: result,
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
+const confirmCreateDoctor = async (req, res, next) => {
+    try {
+        const result = await adminService.confirmCreateDoctor({
+            currentUser: req.user,
+            txHash: req.body.txHash,
+            email: req.body.email,
+            password: req.body.password,
+            nationId: req.body.nationId,
+            walletAddress: req.body.walletAddress,
         });
         res.status(StatusCodes.CREATED).json({
             statusCode: StatusCodes.CREATED,
-            message: 'Doctor account created successfully',
+            message: result.message,
             data: result,
         });
     } catch (err) {
@@ -38,16 +58,36 @@ const createDoctor = async (req, res, next) => {
 // POST /admin/users/create-labtech - Admin tạo lab tech trực tiếp
 const createLabTech = async (req, res, next) => {
     try {
-        const result = await adminService.createLabTech({
+        const result = await adminService.prepareCreateLabTech({
+            adminWalletAddress: req.user.walletAddress,
             email: req.body.email,
             password: req.body.password,
             nationId: req.body.nationId,
             walletAddress: req.body.walletAddress,
-            adminId: req.user._id,
+        });
+        res.status(StatusCodes.OK).json({
+            statusCode: StatusCodes.OK,
+            message: result.message,
+            data: result,
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
+const confirmCreateLabTech = async (req, res, next) => {
+    try {
+        const result = await adminService.confirmCreateLabTech({
+            currentUser: req.user,
+            txHash: req.body.txHash,
+            email: req.body.email,
+            password: req.body.password,
+            nationId: req.body.nationId,
+            walletAddress: req.body.walletAddress,
         });
         res.status(StatusCodes.CREATED).json({
             statusCode: StatusCodes.CREATED,
-            message: 'Lab tech account created successfully',
+            message: result.message,
             data: result,
         });
     } catch (err) {
@@ -58,9 +98,24 @@ const createLabTech = async (req, res, next) => {
 // POST /admin/patients/:patientId/register-blockchain
 const registerPatientBlockchain = async (req, res, next) => {
     try {
-        const result = await adminService.registerPatientBlockchain({
+        const result = await adminService.prepareRegisterPatientBlockchain({
             patientUserId: req.params.patientId,
-            adminId: req.user._id,
+        });
+        res.status(StatusCodes.OK).json({
+            statusCode: StatusCodes.OK,
+            message: result.message,
+            data: result,
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
+const confirmRegisterPatientBlockchain = async (req, res, next) => {
+    try {
+        const result = await adminService.confirmRegisterPatientBlockchain({
+            txHash: req.body.txHash,
+            patientUserId: req.params.patientId,
         });
         res.status(StatusCodes.OK).json({
             statusCode: StatusCodes.OK,
@@ -74,6 +129,9 @@ const registerPatientBlockchain = async (req, res, next) => {
 
 export const adminController = {
     createDoctor,
+    confirmCreateDoctor,
     createLabTech,
+    confirmCreateLabTech,
     registerPatientBlockchain,
+    confirmRegisterPatientBlockchain,
 };

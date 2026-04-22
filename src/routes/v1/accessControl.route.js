@@ -35,6 +35,108 @@ Router.use(verifyToken);
  *           type: number
  *           description: "Thời hạn quyền (giờ), 0 = vĩnh viễn cho đến khi revoke. Bỏ qua nếu expiresAt được cung cấp."
  *           example: 168
+ *     ConfirmGrantAccessRequest:
+ *       type: object
+ *       required:
+ *         - txHash
+ *         - accessorAddress
+ *       properties:
+ *         txHash:
+ *           type: string
+ *           description: Hash giao dịch user đã ký và broadcast từ frontend wallet
+ *           example: "0xabc123def456..."
+ *         accessorAddress:
+ *           type: string
+ *           description: Địa chỉ ví đã được cấp quyền
+ *           example: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+ *         level:
+ *           type: string
+ *           enum: [FULL, SENSITIVE]
+ *           description: Tùy chọn, dùng để ghi log nghiệp vụ
+ *           example: "FULL"
+ *         durationHours:
+ *           type: number
+ *           description: Tùy chọn, dùng để ghi log nghiệp vụ
+ *           example: 168
+ *         expiresAt:
+ *           type: number
+ *           description: Tùy chọn, Unix timestamp dùng để ghi log nghiệp vụ
+ *           example: 1720000000
+ *     ConfirmUpdateAccessRequest:
+ *       type: object
+ *       required:
+ *         - txHash
+ *         - accessorAddress
+ *       properties:
+ *         txHash:
+ *           type: string
+ *           example: "0xabc123def456..."
+ *         accessorAddress:
+ *           type: string
+ *           example: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+ *         level:
+ *           type: string
+ *           enum: [FULL, SENSITIVE]
+ *           example: "SENSITIVE"
+ *         durationHours:
+ *           type: number
+ *           example: 720
+ *         expiresAt:
+ *           type: number
+ *           example: 1720000000
+ *     ConfirmRevokeAccessRequest:
+ *       type: object
+ *       required:
+ *         - txHash
+ *         - accessorAddress
+ *       properties:
+ *         txHash:
+ *           type: string
+ *           example: "0xabc123def456..."
+ *         accessorAddress:
+ *           type: string
+ *           example: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+ *     PrepareTxResponse:
+ *       type: object
+ *       properties:
+ *         message:
+ *           type: string
+ *           example: "Chuẩn bị giao dịch thành công. Hãy ký bằng ví frontend (MetaMask)."
+ *         action:
+ *           type: string
+ *           example: "GRANT_ACCESS"
+ *         txRequest:
+ *           type: object
+ *           properties:
+ *             to:
+ *               type: string
+ *               example: "0xAccessControlContractAddress"
+ *             data:
+ *               type: string
+ *               example: "0xabcdef..."
+ *             value:
+ *               type: string
+ *               example: "0"
+ *             chainId:
+ *               type: string
+ *               example: "0xaa36a7"
+ *         suggestedTx:
+ *           type: object
+ *           properties:
+ *             from:
+ *               type: string
+ *               example: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+ *             gasLimit:
+ *               type: number
+ *               example: 300000
+ *             gasPrice:
+ *               type: string
+ *               example: "20000000000"
+ *             nonce:
+ *               type: number
+ *               example: 10
+ *         details:
+ *           type: object
  *     RevokeAccessRequest:
  *       type: object
  *       required:
@@ -70,12 +172,12 @@ Router.use(verifyToken);
  * @swagger
  * /v1/access-control/grant:
  *   post:
- *     summary: Bệnh nhân cấp quyền truy cập cho bác sĩ/lab tech (Step 2) + Feature 3 Enhancement
+ *     summary: Chuẩn bị giao dịch cấp quyền truy cập (prepare tx cho frontend ký)
  *     description: |
  *       Bệnh nhân cấp quyền cho bác sĩ hoặc lab tech để họ có thể truy cập dữ liệu y tế của mình.
  *       Đây là bước BẮT BUỘC trước khi bác sĩ có thể tạo lab order cho bệnh nhân.
- *       Backend gọi AccessControl.grantAccess(accessor, level, durationHours) on-chain.
- *       Nếu đã có grant hợp lệ (chưa hết hạn), sẽ báo lỗi AlreadyHasAccess - cần revoke trước.
+ *       API này KHÔNG ký transaction ở backend. API chỉ validate business logic và trả tx data cho frontend ký qua MetaMask.
+ *       Nếu đã có grant hợp lệ (chưa hết hạn), sẽ báo lỗi và cần revoke trước.
  *
  *       **Feature 3: Time-Bound Grants Enhancement**
  *       - Hỗ trợ `expiresAt` (Unix timestamp) làm cách chính để set thời hạn.
@@ -111,7 +213,38 @@ Router.use(verifyToken);
  *                 durationHours: 0
  *     responses:
  *       200:
- *         description: Cấp quyền thành công
+ *         description: Chuẩn bị giao dịch thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PrepareTxResponse'
+ *       400:
+ *         description: Lỗi dữ liệu (expiresAt quá khứ, AlreadyHasAccess, v.v.)
+ *       403:
+ *         description: Không phải bệnh nhân
+ */
+Router.post('/grant', authorizeRoles('PATIENT'), accessControlController.grantAccess);
+
+/**
+ * @swagger
+ * /v1/access-control/grant/confirm:
+ *   post:
+ *     summary: Xác nhận giao dịch cấp quyền đã được ký từ frontend wallet
+ *     description: |
+ *       Frontend gọi API này sau khi MetaMask đã ký và broadcast transaction.
+ *       Backend xác minh txHash thuộc về user hiện tại, parse event AccessGranted và ghi audit log.
+ *     tags: [Access Control]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ConfirmGrantAccessRequest'
+ *     responses:
+ *       200:
+ *         description: Xác nhận cấp quyền thành công
  *         content:
  *           application/json:
  *             schema:
@@ -122,24 +255,33 @@ Router.use(verifyToken);
  *                   example: "Cấp quyền truy cập thành công"
  *                 txHash:
  *                   type: string
- *                   description: Hash giao dịch blockchain
  *                   example: "0xabc123def456..."
+ *                 blockNumber:
+ *                   type: number
+ *                   example: 5812300
+ *                 level:
+ *                   type: string
+ *                   example: "FULL"
+ *                 expiresAt:
+ *                   type: number
+ *                   example: 1720000000
  *       400:
- *         description: Lỗi dữ liệu (expiresAt quá khứ, AlreadyHasAccess, v.v.)
+ *         description: Tx không hợp lệ hoặc event không khớp
  *       403:
- *         description: Không phải bệnh nhân
+ *         description: Tx không thuộc user hiện tại
+ *       409:
+ *         description: Tx chưa được confirm trên chain
  */
-Router.post('/grant', authorizeRoles('PATIENT'), accessControlController.grantAccess);
 Router.post('/grant/confirm', authorizeRoles('PATIENT'), accessControlController.confirmGrantAccess);
 
 /**
  * @swagger
  * /v1/access-control/update:
  *   patch:
- *     summary: Bệnh nhân cập nhật quyền truy cập + Feature 3 Enhancement
+ *     summary: Chuẩn bị giao dịch cập nhật quyền truy cập (prepare tx cho frontend ký)
  *     description: |
  *       Bệnh nhân cập nhật mức quyền hoặc thời hạn cho bác sĩ/lab tech đã có grant.
- *       Backend gọi AccessControl.updateAccess(accessor, level, durationHours) on-chain.
+ *       API này KHÔNG ký transaction ở backend. API chỉ validate business logic và trả tx data cho frontend ký qua MetaMask.
  *       Grant phải đang active (chưa bị revoke).
  *
  *       **Feature 3: Time-Bound Grants Enhancement**
@@ -169,24 +311,76 @@ Router.post('/grant/confirm', authorizeRoles('PATIENT'), accessControlController
  *                 durationHours: 720
  *     responses:
  *       200:
- *         description: Cập nhật quyền thành công
+ *         description: Chuẩn bị giao dịch thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PrepareTxResponse'
  *       400:
  *         description: Grant không tồn tại hoặc đã hết hạn
  *       403:
  *         description: Không phải bệnh nhân
  */
 Router.patch('/update', authorizeRoles('PATIENT'), accessControlController.updateAccess);
+
+/**
+ * @swagger
+ * /v1/access-control/update/confirm:
+ *   patch:
+ *     summary: Xác nhận giao dịch cập nhật quyền đã được ký từ frontend wallet
+ *     description: |
+ *       Frontend gọi API này sau khi MetaMask đã ký và broadcast transaction update.
+ *       Backend xác minh txHash, parse event AccessUpdated và ghi audit log.
+ *     tags: [Access Control]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ConfirmUpdateAccessRequest'
+ *     responses:
+ *       200:
+ *         description: Xác nhận cập nhật quyền thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Cập nhật quyền truy cập thành công"
+ *                 txHash:
+ *                   type: string
+ *                   example: "0xabc123def456..."
+ *                 blockNumber:
+ *                   type: number
+ *                   example: 5812300
+ *                 level:
+ *                   type: string
+ *                   example: "SENSITIVE"
+ *                 expiresAt:
+ *                   type: number
+ *                   example: 1720000000
+ *       400:
+ *         description: Tx không hợp lệ hoặc event không khớp
+ *       403:
+ *         description: Tx không thuộc user hiện tại
+ *       409:
+ *         description: Tx chưa được confirm trên chain
+ */
 Router.patch('/update/confirm', authorizeRoles('PATIENT'), accessControlController.confirmUpdateAccess);
 
 /**
  * @swagger
  * /v1/access-control/revoke:
  *   post:
- *     summary: Bệnh nhân thu hồi quyền truy cập
+ *     summary: Chuẩn bị giao dịch thu hồi quyền truy cập (prepare tx cho frontend ký)
  *     description: |
  *       Bệnh nhân thu hồi quyền truy cập của bác sĩ/lab tech.
- *       Backend gọi AccessControl.revokeAccess(accessor) on-chain.
- *       Sau khi revoke, bác sĩ/lab tech không thể truy cập dữ liệu của bệnh nhân nữa.
+ *       API này KHÔNG ký transaction ở backend. API chỉ validate business logic và trả tx data cho frontend ký qua MetaMask.
+ *       Sau khi confirm revoke, bác sĩ/lab tech không thể truy cập dữ liệu của bệnh nhân nữa.
  *     tags: [Access Control]
  *     security:
  *       - bearerAuth: []
@@ -203,13 +397,59 @@ Router.patch('/update/confirm', authorizeRoles('PATIENT'), accessControlControll
  *                 accessorAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
  *     responses:
  *       200:
- *         description: Thu hồi quyền thành công
+ *         description: Chuẩn bị giao dịch thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PrepareTxResponse'
  *       400:
  *         description: Grant không tồn tại
  *       403:
  *         description: Không phải bệnh nhân
  */
 Router.post('/revoke', authorizeRoles('PATIENT'), accessControlController.revokeAccess);
+
+/**
+ * @swagger
+ * /v1/access-control/revoke/confirm:
+ *   post:
+ *     summary: Xác nhận giao dịch thu hồi quyền đã được ký từ frontend wallet
+ *     description: |
+ *       Frontend gọi API này sau khi MetaMask đã ký và broadcast transaction revoke.
+ *       Backend xác minh txHash, parse event AccessRevoked và ghi audit log.
+ *     tags: [Access Control]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ConfirmRevokeAccessRequest'
+ *     responses:
+ *       200:
+ *         description: Xác nhận thu hồi quyền thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Thu hồi quyền truy cập thành công"
+ *                 txHash:
+ *                   type: string
+ *                   example: "0xabc123def456..."
+ *                 blockNumber:
+ *                   type: number
+ *                   example: 5812300
+ *       400:
+ *         description: Tx không hợp lệ hoặc event không khớp
+ *       403:
+ *         description: Tx không thuộc user hiện tại
+ *       409:
+ *         description: Tx chưa được confirm trên chain
+ */
 Router.post('/revoke/confirm', authorizeRoles('PATIENT'), accessControlController.confirmRevokeAccess);
 
 /**
