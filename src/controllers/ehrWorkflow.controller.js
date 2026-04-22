@@ -40,7 +40,16 @@ import { ehrWorkflowService } from '~/services/ehrWorkflow.service';
 // Step 4: Patient xác nhận đồng ý
 const consentToOrder = async (req, res, next) => {
     try {
-        const result = await ehrWorkflowService.consentToOrder(req.user, req.params.id);
+        const result = await ehrWorkflowService.prepareConsentToOrder(req.user, req.params.id);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+const confirmConsentToOrder = async (req, res, next) => {
+    try {
+        const result = await ehrWorkflowService.confirmConsentToOrder(req.user, req.params.id, req.body.txHash);
         res.status(StatusCodes.OK).json(result);
     } catch (e) {
         next(e);
@@ -50,7 +59,16 @@ const consentToOrder = async (req, res, next) => {
 // Step 5: Lab Tech tiếp nhận order
 const receiveOrder = async (req, res, next) => {
     try {
-        const result = await ehrWorkflowService.receiveOrder(req.user, req.params.id);
+        const result = await ehrWorkflowService.prepareReceiveOrder(req.user, req.params.id);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+const confirmReceiveOrder = async (req, res, next) => {
+    try {
+        const result = await ehrWorkflowService.confirmReceiveOrder(req.user, req.params.id, req.body.txHash);
         res.status(StatusCodes.OK).json(result);
     } catch (e) {
         next(e);
@@ -60,7 +78,20 @@ const receiveOrder = async (req, res, next) => {
 // Step 6: Lab Tech post kết quả
 const postLabResult = async (req, res, next) => {
     try {
-        const result = await ehrWorkflowService.postLabResult(req.user, req.params.id, req.body);
+        const result = await ehrWorkflowService.preparePostLabResult(req.user, req.params.id, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+const confirmPostLabResult = async (req, res, next) => {
+    try {
+        const payload = {
+            ...req.body,
+            txHash: req.body.txHash,
+        };
+        const result = await ehrWorkflowService.confirmPostLabResult(req.user, req.params.id, payload);
         res.status(StatusCodes.OK).json(result);
     } catch (e) {
         next(e);
@@ -70,7 +101,20 @@ const postLabResult = async (req, res, next) => {
 // Step 7: Bác sĩ thêm diễn giải lâm sàng
 const addClinicalInterpretation = async (req, res, next) => {
     try {
-        const result = await ehrWorkflowService.addClinicalInterpretation(req.user, req.params.id, req.body);
+        const result = await ehrWorkflowService.prepareClinicalInterpretation(req.user, req.params.id, req.body);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+const confirmClinicalInterpretation = async (req, res, next) => {
+    try {
+        const payload = {
+            ...req.body,
+            txHash: req.body.txHash,
+        };
+        const result = await ehrWorkflowService.confirmClinicalInterpretation(req.user, req.params.id, payload);
         res.status(StatusCodes.OK).json(result);
     } catch (e) {
         next(e);
@@ -80,7 +124,16 @@ const addClinicalInterpretation = async (req, res, next) => {
 // Step 8: Bác sĩ chốt hồ sơ
 const completeRecord = async (req, res, next) => {
     try {
-        const result = await ehrWorkflowService.completeRecord(req.user, req.params.id);
+        const result = await ehrWorkflowService.prepareCompleteRecord(req.user, req.params.id);
+        res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+const confirmCompleteRecord = async (req, res, next) => {
+    try {
+        const result = await ehrWorkflowService.confirmCompleteRecord(req.user, req.params.id, req.body.txHash);
         res.status(StatusCodes.OK).json(result);
     } catch (e) {
         next(e);
@@ -89,8 +142,13 @@ const completeRecord = async (req, res, next) => {
 
 export const ehrWorkflowController = {
     consentToOrder,
+    confirmConsentToOrder,
     receiveOrder,
+    confirmReceiveOrder,
     postLabResult,
+    confirmPostLabResult,
     addClinicalInterpretation,
+    confirmClinicalInterpretation,
     completeRecord,
+    confirmCompleteRecord,
 };

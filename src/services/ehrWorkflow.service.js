@@ -8,6 +8,7 @@ import { medicalRecordService } from '~/services/medicalRecord.service';
 import { AI_SERVICE_URL } from '~/utils/constants';
 import { ethers } from 'ethers';
 import { normalizeWalletAddress, compareWalletAddresses } from '~/utils/wallet';  // [Sửa #5] Utility ví tập trung
+import metaMaskTxBuilder, { verifyTransactionOnBlockchain } from '~/utils/metaMaskTxBuilder';
 
 // ============================================================================
 // CONSTANTS: Trạng thái TestResult + Chiến lược xử lý lỗi
@@ -96,6 +97,92 @@ const verifyRole = async (currentUser, requiredRole) => {
     return user;
 };
 
+const toHexChainId = (chainId) => `0x${Number(chainId).toString(16)}`;
+
+const buildPrepareResponse = (action, preparedTx, details = {}) => {
+    const { unsignedTx, chainId, functionSignature } = preparedTx;
+
+    return {
+        message: 'Chuẩn bị giao dịch thành công. Hãy ký bằng ví frontend (MetaMask).',
+        action,
+        txRequest: {
+            to: unsignedTx.to,
+            data: unsignedTx.data,
+            value: unsignedTx.value || '0',
+            chainId: toHexChainId(chainId),
+        },
+        suggestedTx: {
+            from: unsignedTx.from,
+            gasLimit: unsignedTx.gasLimit,
+            gasPrice: unsignedTx.gasPrice,
+            nonce: unsignedTx.nonce,
+        },
+        details: {
+            functionSignature,
+            chainId: Number(chainId),
+            ...details,
+        },
+    };
+};
+
+const verifyConfirmedTxByUser = async (walletAddress, txHash) => {
+    if (!txHash) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu txHash để xác nhận giao dịch');
+    }
+
+    const verification = await verifyTransactionOnBlockchain(txHash);
+
+    if (!verification.found) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy giao dịch trên blockchain');
+    }
+
+    if (!verification.confirmed) {
+        throw new ApiError(StatusCodes.CONFLICT, 'Giao dịch chưa được xác nhận trên blockchain');
+    }
+
+    if (verification.status !== 'SUCCESS') {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch thất bại trên blockchain');
+    }
+
+    const txFrom = verification.from?.toLowerCase();
+    const userWallet = walletAddress?.toLowerCase();
+    if (!txFrom || !userWallet || txFrom !== userWallet) {
+        throw new ApiError(
+            StatusCodes.FORBIDDEN,
+            `Giao dịch không thuộc về user hiện tại. tx.from=${verification.from}, user.wallet=${walletAddress}`
+        );
+    }
+
+    return verification;
+};
+
+const verifyTxFunctionCall = async ({ txHash, contract, functionName, argsValidator }) => {
+    const tx = await blockchainContracts.provider.getTransaction(txHash);
+    if (!tx) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy transaction data');
+    }
+
+    if (!tx.to || tx.to.toLowerCase() !== contract.target.toLowerCase()) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch không gửi tới contract đích');
+    }
+
+    const parsed = contract.interface.parseTransaction({
+        data: tx.data,
+        value: tx.value,
+    });
+
+    if (!parsed || parsed.name !== functionName) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, `Giao dịch không gọi đúng hàm ${functionName}`);
+    }
+
+    if (typeof argsValidator === 'function') {
+        const validArgs = argsValidator(parsed.args);
+        if (!validArgs) {
+            throw new ApiError(StatusCodes.BAD_REQUEST, `Args không khớp cho hàm ${functionName}`);
+        }
+    }
+};
+
 // ============================================================================
 // HELPER: Tạo TestResult với retry logic (Issue B - High Priority)
 // ============================================================================
@@ -177,7 +264,7 @@ const createTestResultWithRetry = async (testResultData, maxRetries = 3) => {
  */
 
 // Step 4: Patient xác nhận đồng ý
-const consentToOrder = async (currentUser, labOrderId) => {
+const consentToOrder = async (currentUser, labOrderId, txHash = null) => {
     // [Sửa #1] Xác thực role = PATIENT (không chỉ tin middleware)
     // [Sửa #2] Xác thực status = ACTIVE
     await verifyRole(currentUser, 'PATIENT');
@@ -213,15 +300,24 @@ const consentToOrder = async (currentUser, labOrderId) => {
         throw new ApiError(StatusCodes.BAD_REQUEST, `Expected status ORDERED but found ${labOrderForStatus.sampleStatus}. Cannot consent to lab order`);
     }
 
-    // Gọi updateRecordStatus trên EHRManager: ORDERED → CONSENTED
-    let txHash = null;
-    try {
-        const tx = await blockchainContracts.patient.ehrManager.updateRecordStatus(recordId, 1); // CONSENTED = 1
-        const receipt = await tx.wait();
-        txHash = receipt.hash;
-    } catch (blockchainError) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, `Gọi blockchain updateRecordStatus thất bại: ${blockchainError.message}`);
+    if (!txHash) {
+        const preparedTx = await metaMaskTxBuilder.prepareConsentTx(normalizedUserWallet, recordId);
+        return buildPrepareResponse('CONSENT_LAB_ORDER', preparedTx, {
+            labOrderId,
+            recordId,
+            fromStatus: 'ORDERED',
+            toStatus: 'CONSENTED',
+        });
     }
+
+    await verifyConfirmedTxByUser(normalizedUserWallet, txHash);
+
+    await verifyTxFunctionCall({
+        txHash,
+        contract: blockchainContracts.read.ehrManager,
+        functionName: 'updateRecordStatus',
+        argsValidator: (args) => Number(args?.[0]) === Number(recordId) && Number(args?.[1]) === 1,
+    });
 
     // Cập nhật trạng thái trong MongoDB
     const now = new Date();
@@ -261,7 +357,7 @@ const consentToOrder = async (currentUser, labOrderId) => {
 };
 
 // Step 5: Lab Tech tiếp nhận order
-const receiveOrder = async (currentUser, labOrderId) => {
+const receiveOrder = async (currentUser, labOrderId, txHash = null) => {
     // [Sửa #1] Xác thực role = LAB_TECH (không chỉ tin middleware)
     // [Sửa #2] Xác thực status = ACTIVE
     await verifyRole(currentUser, 'LAB_TECH');
@@ -301,15 +397,24 @@ const receiveOrder = async (currentUser, labOrderId) => {
         throw new ApiError(StatusCodes.BAD_REQUEST, `Expected status CONSENTED but found ${labOrderForReceive.sampleStatus}. Cannot receive lab order`);
     }
 
-    // Gọi updateRecordStatus trên EHRManager: CONSENTED → IN_PROGRESS
-    let txHash = null;
-    try {
-        const tx = await blockchainContracts.labTech.ehrManager.updateRecordStatus(recordId, 2); // IN_PROGRESS = 2
-        const receipt = await tx.wait();
-        txHash = receipt.hash;
-    } catch (blockchainError) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, `Gọi blockchain updateRecordStatus thất bại: ${blockchainError.message}`);
+    if (!txHash) {
+        const preparedTx = await metaMaskTxBuilder.prepareReceiveOrderTx(normalizedLabTechWallet, recordId);
+        return buildPrepareResponse('RECEIVE_LAB_ORDER', preparedTx, {
+            labOrderId,
+            recordId,
+            fromStatus: 'CONSENTED',
+            toStatus: 'IN_PROGRESS',
+        });
     }
+
+    await verifyConfirmedTxByUser(normalizedLabTechWallet, txHash);
+
+    await verifyTxFunctionCall({
+        txHash,
+        contract: blockchainContracts.read.ehrManager,
+        functionName: 'updateRecordStatus',
+        argsValidator: (args) => Number(args?.[0]) === Number(recordId) && Number(args?.[1]) === 2,
+    });
 
     // Cập nhật trạng thái trong MongoDB
     const now = new Date();
@@ -355,7 +460,7 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
     // [Sửa #2] Xác thực status = ACTIVE
     await verifyRole(currentUser, 'LAB_TECH');
 
-    const { rawData, note } = resultData;
+    const { rawData, note, txHash: confirmedTxHash } = resultData;
 
     const labOrder = await labOrderModel.LabOrderModel.findById(labOrderId);
     if (!labOrder) {
@@ -412,16 +517,29 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
     const labResultHash = ethers.keccak256(ethers.toUtf8Bytes(labResultString));
 
     // 3. Gọi postLabResult trên EHRManager (v4 optimization - labResultIpfsHash stored off-chain)
-    let txHash = null;
+    let txHash = confirmedTxHash;
     let syncBlockNumber = null;
-    try {
-        const tx = await blockchainContracts.labTech.ehrManager.postLabResult(
+    if (!txHash) {
+        const preparedTx = await metaMaskTxBuilder.preparePostResultTx(normalizedLabTechWallet, recordId, labResultHash);
+        return buildPrepareResponse('POST_LAB_RESULT', preparedTx, {
+            labOrderId,
             recordId,
-            labResultHash
-        );
-        const receipt = await tx.wait();
-        txHash = receipt.hash;
-        syncBlockNumber = receipt.blockNumber;
+            labResultHash,
+            fromStatus: 'IN_PROGRESS',
+            toStatus: 'RESULT_POSTED',
+        });
+    }
+
+    try {
+        const verification = await verifyConfirmedTxByUser(normalizedLabTechWallet, txHash);
+        syncBlockNumber = verification.blockNumber;
+
+        await verifyTxFunctionCall({
+            txHash,
+            contract: blockchainContracts.read.ehrManager,
+            functionName: 'postLabResult',
+            argsValidator: (args) => Number(args?.[0]) === Number(recordId) && args?.[1]?.toLowerCase() === labResultHash.toLowerCase(),
+        });
     } catch (blockchainError) {
         throw new ApiError(StatusCodes.BAD_REQUEST, `Gọi blockchain postLabResult thất bại: ${blockchainError.message}`);
     }
@@ -720,60 +838,6 @@ const verifyPatientAccessHelper = async (patientAddr, doctorAddr, requiredLevel)
     }
 };
 
-/**
- * Helper 4: Verify Signer Wallet Match (CRITICAL!)
- * Kiểm tra: Blockchain signer có match currentUser wallet?
- * Error message: Cụ thể 2 wallet, cách fix ngay
- */
-const verifySignerMatchHelper = (signerAddress, expectedAddress) => {
-    const signerAddr = signerAddress?.toLowerCase();
-    const expectedAddr = expectedAddress?.toLowerCase();
-    if (signerAddr !== expectedAddr) {
-        throw new ApiError(
-            StatusCodes.UNAUTHORIZED,
-            `❌ WALLET MISMATCH - CRITICAL ERROR!\\n` +
-            `Blockchain signer: ${signerAddr || 'NOT AVAILABLE'}\\n` +
-            `Bạn đang login: ${expectedAddr}\\n\\n` +
-            `Nguyên nhân: Metamask wallet khác với hệ thống\\n` +
-            `Cách fix NGAY:\\n` +
-            `1. Logout khỏi hệ thống\\n` +
-            `2. Logout khỏi Metamask\\n` +
-            `3. Login lại Metamask với wallet: ${signerAddr || 'wallet chính xác'}\\n` +
-            `4. Login lại vào hệ thống\\n\\n` +
-            `Nếu vấn đề vẫn tồn tại, kiểm tra:\\n` +
-            `- Admin có chỉ định đúng doctor không?\\n` +
-            `- Hay liên hệ IT: [labOrderId + wallet của bạn]`
-        );
-    }
-    console.log(`[Clinical Interpretation] ✅ Verified: Signer match (${expectedAddr})`);
-};
-
-/**
- * Helper 5: Execute Blockchain Call with Clear Error Handling
- * Thực thi blockchain call, nếu fail thì lỗi cụ thể
- * Error message: Blockchain revert reason nếu có
- */
-const executeBlockchainCallHelper = async (doctorSigner, recordId, interpretationHash) => {
-    try {
-        console.log(`[Clinical Interpretation] Executing blockchain call...`);
-        const tx = await doctorSigner.addClinicalInterpretation(recordId, interpretationHash);
-        console.log(`[Clinical Interpretation] Waiting for blockchain confirmation...`);
-        const receipt = await tx.wait();
-        console.log(`[Clinical Interpretation] Blockchain confirmed - txHash: ${receipt.hash}`);
-        return {
-            txHash: receipt.hash,
-            blockNumber: receipt.blockNumber,
-        };
-    } catch (blockchainError) {
-        console.error(`[Clinical Interpretation] Blockchain execution failed:`, blockchainError.message);
-        throw new ApiError(
-            StatusCodes.BAD_REQUEST,
-            `Blockchain execution failed: ${blockchainError.message}. ` +
-            `Kiểm tra logs hoặc thử lại sau vài giây.`
-        );
-    }
-};
-
 // ============================================================================
 // MAIN FUNCTION: Clean, step-by-step flow
 // ============================================================================
@@ -782,7 +846,7 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
     console.log(`[Clinical Interpretation] Starting: labOrderId=${labOrderId}, doctor=${currentUser.walletAddress}`);
 
     // Step 0: Validate input
-    const { interpretation, recommendation, confirmedDiagnosis, interpreterNote } = interpretationData;
+    const { interpretation, recommendation, confirmedDiagnosis, interpreterNote, txHash: confirmedTxHash } = interpretationData;
     if (!confirmedDiagnosis) {
         throw new ApiError(
             StatusCodes.BAD_REQUEST,
@@ -836,31 +900,40 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
     console.log(`[Clinical Interpretation] Step 5: Verifying patient access (level ${requiredLevelForCheck})...`);
     await verifyPatientAccessHelper(normalizedPatientAddr, normalizedDoctorAddr, requiredLevelForCheck);
 
-    // Step 6: Verify signer match (CRITICAL!)
-    console.log(`[Clinical Interpretation] Step 6: Verifying signer wallet match...`);
-    const doctorSigner = blockchainContracts.doctor.ehrManager;
-    verifySignerMatchHelper(doctorSigner.signer?.address, normalizedDoctorAddr);
-
-    // Step 7: Calculate interpretation hash
+    // Step 6: Calculate interpretation hash
     const interpretationHash = ethers.keccak256(
         ethers.toUtf8Bytes(interpretation + (recommendation || ''))
     );
-    console.log(`[Clinical Interpretation] Step 7: Calculated interpretationHash: ${interpretationHash}`);
+    console.log(`[Clinical Interpretation] Step 6: Calculated interpretationHash: ${interpretationHash}`);
 
-    // Step 8: Execute blockchain call
-    console.log(`[Clinical Interpretation] Step 8: Executing blockchain call...`);
-    let txHash = null;
-    let syncBlockNumber = null;
-    try {
-        const result = await executeBlockchainCallHelper(doctorSigner, recordId, interpretationHash);
-        txHash = result.txHash;
-        syncBlockNumber = result.blockNumber;
-    } catch (err) {
-        throw err;
+    if (!confirmedTxHash) {
+        const preparedTx = await metaMaskTxBuilder.prepareInterpretationTx(normalizedDoctorAddr, recordId, interpretationHash);
+        return buildPrepareResponse('ADD_CLINICAL_INTERPRETATION', preparedTx, {
+            labOrderId,
+            recordId,
+            interpretationHash,
+            confirmedDiagnosis,
+            fromStatus: 'RESULT_POSTED',
+            toStatus: 'DOCTOR_REVIEWED',
+        });
     }
 
-    // Step 9: Update MongoDB
-    console.log(`[Clinical Interpretation] Step 9: Updating MongoDB...`);
+    // Step 7: Verify transaction confirmed by doctor wallet
+    console.log(`[Clinical Interpretation] Step 7: Verifying signed transaction...`);
+    let txHash = confirmedTxHash;
+    let syncBlockNumber = null;
+    const verification = await verifyConfirmedTxByUser(normalizedDoctorAddr, confirmedTxHash);
+    syncBlockNumber = verification.blockNumber;
+
+    await verifyTxFunctionCall({
+        txHash: confirmedTxHash,
+        contract: blockchainContracts.read.ehrManager,
+        functionName: 'addClinicalInterpretation',
+        argsValidator: (args) => Number(args?.[0]) === Number(recordId) && args?.[1]?.toLowerCase() === interpretationHash.toLowerCase(),
+    });
+
+    // Step 8: Update MongoDB
+    console.log(`[Clinical Interpretation] Step 8: Updating MongoDB...`);
     const now = new Date();
     labOrder.sampleStatus = 'DOCTOR_REVIEWED';
     labOrder.interpretationHash = interpretationHash;
@@ -888,7 +961,7 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
         );
     }
 
-    // Step 10: Create audit log
+    // Step 9: Create audit log
     try {
         await auditLogModel.createLog({
             userId: currentUser._id,
@@ -911,7 +984,7 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
         console.error(`[Clinical Interpretation] Audit log failed (non-blocking):`, auditError.message);
     }
 
-    // Step 11: Auto-sync medical record with confirmed diagnosis
+    // Step 10: Auto-sync medical record with confirmed diagnosis
     let syncStatus = 'PENDING';
     if (labOrder.relatedMedicalRecordId) {
         try {
@@ -996,7 +1069,7 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
  * 
  * Currently: Option 0 (No action) - status flag only, UI enforces read-only
  */
-const completeRecord = async (currentUser, labOrderId) => {
+const completeRecord = async (currentUser, labOrderId, txHash = null) => {
     // [HIGH FIX #1] Verify role = DOCTOR (using helper for consistency)
     // [HIGH FIX #2] Verify status = ACTIVE (using helper)
     await verifyRole(currentUser, 'DOCTOR');
@@ -1022,21 +1095,30 @@ const completeRecord = async (currentUser, labOrderId) => {
         throw new ApiError(StatusCodes.BAD_REQUEST, `Expected status DOCTOR_REVIEWED but found ${labOrderForComplete.sampleStatus}. Cannot finalize record`);
     }
 
-    // Gọi updateRecordStatus trên EHRManager: DOCTOR_REVIEWED → COMPLETE
-    // [CRITICAL FIX #3] Use doctor wallet (not admin) to sign finalization - ensures doctor accountability
-    let txHash = null;
-    try {
-        const tx = await blockchainContracts.doctor.ehrManager.updateRecordStatus(recordId, 5); // COMPLETE = 5
-        const receipt = await tx.wait();
-        txHash = receipt.hash;
-    } catch (blockchainError) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, `Gọi blockchain updateRecordStatus thất bại: ${blockchainError.message}`);
+    const normalizedDoctorWallet = normalizeWalletAddress(currentUser.walletAddress);
+
+    if (!txHash) {
+        const preparedTx = await metaMaskTxBuilder.prepareCompleteTx(normalizedDoctorWallet, recordId);
+        return buildPrepareResponse('COMPLETE_RECORD', preparedTx, {
+            labOrderId,
+            recordId,
+            fromStatus: 'DOCTOR_REVIEWED',
+            toStatus: 'COMPLETE',
+        });
     }
+
+    await verifyConfirmedTxByUser(normalizedDoctorWallet, txHash);
+
+    await verifyTxFunctionCall({
+        txHash,
+        contract: blockchainContracts.read.ehrManager,
+        functionName: 'updateRecordStatus',
+        argsValidator: (args) => Number(args?.[0]) === Number(recordId) && Number(args?.[1]) === 5,
+    });
 
     // Cập nhật trạng thái trong MongoDB
     const now = new Date();
     // [HIGH FIX #3] Normalize wallet address
-    const normalizedDoctorWallet = normalizeWalletAddress(currentUser.walletAddress);
 
     labOrder.sampleStatus = 'COMPLETE';
     labOrder.completedAt = now; // IMPORTANT: Set completedAt field
@@ -1182,12 +1264,76 @@ const directCompleteRecord = async (currentUser, medicalRecordId) => {
     };
 };
 
+const prepareConsentToOrder = async (currentUser, labOrderId) => {
+    return consentToOrder(currentUser, labOrderId, null);
+};
+
+const confirmConsentToOrder = async (currentUser, labOrderId, txHash) => {
+    if (!txHash) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu txHash để xác nhận đồng ý xét nghiệm');
+    }
+    return consentToOrder(currentUser, labOrderId, txHash);
+};
+
+const prepareReceiveOrder = async (currentUser, labOrderId) => {
+    return receiveOrder(currentUser, labOrderId, null);
+};
+
+const confirmReceiveOrder = async (currentUser, labOrderId, txHash) => {
+    if (!txHash) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu txHash để xác nhận tiếp nhận order');
+    }
+    return receiveOrder(currentUser, labOrderId, txHash);
+};
+
+const preparePostLabResult = async (currentUser, labOrderId, resultData) => {
+    const payload = { ...(resultData || {}) };
+    delete payload.txHash;
+    return postLabResult(currentUser, labOrderId, payload);
+};
+
+const confirmPostLabResult = async (currentUser, labOrderId, resultData) => {
+    if (!resultData?.txHash) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu txHash để xác nhận post kết quả');
+    }
+    return postLabResult(currentUser, labOrderId, resultData);
+};
+
+const prepareClinicalInterpretation = async (currentUser, labOrderId, interpretationData) => {
+    const payload = { ...(interpretationData || {}) };
+    delete payload.txHash;
+    return addClinicalInterpretation(currentUser, labOrderId, payload);
+};
+
+const confirmClinicalInterpretation = async (currentUser, labOrderId, interpretationData) => {
+    if (!interpretationData?.txHash) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu txHash để xác nhận thêm diễn giải lâm sàng');
+    }
+    return addClinicalInterpretation(currentUser, labOrderId, interpretationData);
+};
+
+const prepareCompleteRecord = async (currentUser, labOrderId) => {
+    return completeRecord(currentUser, labOrderId, null);
+};
+
+const confirmCompleteRecord = async (currentUser, labOrderId, txHash) => {
+    if (!txHash) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu txHash để xác nhận chốt hồ sơ');
+    }
+    return completeRecord(currentUser, labOrderId, txHash);
+};
+
 export const ehrWorkflowService = {
-    consentToOrder,
-    receiveOrder,
-    postLabResult,
-    addClinicalInterpretation,
-    completeRecord,
+    prepareConsentToOrder,
+    confirmConsentToOrder,
+    prepareReceiveOrder,
+    confirmReceiveOrder,
+    preparePostLabResult,
+    confirmPostLabResult,
+    prepareClinicalInterpretation,
+    confirmClinicalInterpretation,
+    prepareCompleteRecord,
+    confirmCompleteRecord,
     directCompleteRecord,
 };
 

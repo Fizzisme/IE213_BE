@@ -168,7 +168,16 @@ import { labOrderService } from '~/services/labOrder.service';
  */
 const createLabOrder = async (req, res, next) => {
     try {
-        const result = await labOrderService.createLabOrder(req.body, req.user);
+        const result = await labOrderService.prepareCreateLabOrder(req.body, req.user);
+        res.status(StatusCodes.CREATED).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+const confirmCreateLabOrder = async (req, res, next) => {
+    try {
+        const result = await labOrderService.confirmCreateLabOrder(req.body, req.user);
         res.status(StatusCodes.CREATED).json(result);
     } catch (e) {
         next(e);
@@ -325,7 +334,7 @@ const cancelLabOrder = async (req, res, next) => {
     }
 };
 
-// [Vấn đề 3] Doctor assign order cho lab tech
+// [Vấn đề 3] Admin assign order cho lab tech
 const assignLabOrderToTech = async (req, res, next) => {
     try {
         const { labOrderId, labTechId } = req.body;
@@ -338,6 +347,7 @@ const assignLabOrderToTech = async (req, res, next) => {
 
 export const labOrderController = {
     createLabOrder,
+    confirmCreateLabOrder,
     getLabOrderDetail,
     getLabOrders,
     deleteLabOrder,

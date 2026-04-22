@@ -75,12 +75,12 @@ const Router = express.Router();
  * @swagger
  * /v1/lab-orders:
  *   post:
- *     summary: Bác sĩ tạo lab order (Step 3)
+ *     summary: Chuẩn bị giao dịch tạo lab order (MetaMask prepare)
  *     description: |
- *       Bác sĩ tạo yêu cầu xét nghiệm cho bệnh nhân.
+ *       Bác sĩ tạo yêu cầu xét nghiệm cho bệnh nhân theo flow MetaMask.
  *       Điều kiện tiên quyết: Bệnh nhân PHẢI đã cấp quyền truy cập cho bác sĩ này (xem Step 2).
- *       Backend sẽ: tính keccak256 hash của metadata → gọi EHRManager.addRecord() on-chain (metadata stored in MongoDB).
- *       Record trên blockchain sẽ có status = ORDERED.
+ *       Backend sẽ validate nghiệp vụ + tính keccak256 hash + trả unsigned tx để frontend ký/broadcast.
+ *       Sau đó frontend gọi API /v1/lab-orders/confirm để backend xác nhận txHash và ghi DB.
  *     tags: [LabOrder]
  *     security:
  *       - bearerAuth: []
@@ -119,31 +119,27 @@ const Router = express.Router();
  *                 sampleType: "blood"
  *     responses:
  *       201:
- *         description: Tạo lab order thành công
+ *         description: Chuẩn bị giao dịch thành công (trả txRequest cho MetaMask)
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 recordId:
+ *                 message:
  *                   type: string
- *                   description: ID của record trên blockchain
- *                   example: "1"
- *                 txHash:
+ *                   example: "Chuẩn bị giao dịch thành công. Hãy ký bằng ví frontend (MetaMask)."
+ *                 action:
  *                   type: string
- *                   description: Hash giao dịch blockchain
- *                   example: "0xabc123..."
- *                 status:
+ *                   example: "CREATE_LAB_ORDER"
+ *                 txRequest:
+ *                   type: object
+ *                   description: Dữ liệu frontend gửi vào `eth_sendTransaction`
+ *                 suggestedTx:
+ *                   type: object
+ *                   description: Gợi ý gas/nonce để frontend tham khảo
+ *                 details:
  *                   type: string
- *                   example: "ORDERED"
- *                 labOrderId:
- *                   type: string
- *                   description: ID của lab order trong MongoDB
- *                   example: "6801a2b3c4d5e6f789012345"
- *                 orderHash:
- *                   type: string
- *                   description: keccak256 hash của metadata (lưu trên blockchain để verify)
- *                   example: "0xdef456..."
+ *                   description: Thông tin nghiệp vụ để frontend gắn lại lúc confirm
  *       400:
  *         description: Lỗi dữ liệu đầu vào, chưa được cấp quyền, hoặc blockchain error
  *       401:
@@ -155,13 +151,27 @@ Router.post('/', verifyToken, authorizeRoles('DOCTOR'), labOrderController.creat
 
 /**
  * @swagger
+ * /v1/lab-orders/confirm:
+ *   post:
+ *     summary: Xác nhận tạo lab order sau khi MetaMask ký
+ *     description: |
+ *       Frontend gọi endpoint này sau khi user ký và broadcast transaction addRecord.
+ *       Backend verify txHash + function args + event RecordAdded, sau đó mới ghi MongoDB và audit log.
+ *     tags: [LabOrder]
+ *     security:
+ *       - bearerAuth: []
+ */
+Router.post('/confirm', verifyToken, authorizeRoles('DOCTOR'), labOrderController.confirmCreateLabOrder);
+
+/**
+ * @swagger
  * /v1/lab-orders/{id}/consent:
  *   patch:
- *     summary: Bệnh nhân xác nhận đồng ý (Step 4)
+ *     summary: Chuẩn bị giao dịch đồng ý xét nghiệm (MetaMask prepare)
  *     description: |
  *       Bệnh nhân xem thông tin lab order và xác nhận đồng ý thực hiện xét nghiệm.
  *       Chỉ bệnh nhân sở hữu order mới có quyền xác nhận.
- *       Backend gọi EHRManager.updateRecordStatus(recordId, CONSENTED) on-chain.
+ *       Backend chỉ validate và trả txRequest để frontend ký/broadcast qua MetaMask.
  *       Nếu bệnh nhân không đồng ý, order ở trạng thái ORDERED và không được tiến hành.
  *     tags: [LabOrder]
  *     security:
@@ -176,7 +186,7 @@ Router.post('/', verifyToken, authorizeRoles('DOCTOR'), labOrderController.creat
  *         example: "6801a2b3c4d5e6f789012345"
  *     responses:
  *       200:
- *         description: Xác nhận đồng ý thành công
+ *         description: Chuẩn bị giao dịch đồng ý thành công
  *         content:
  *           application/json:
  *             schema:
@@ -184,13 +194,12 @@ Router.post('/', verifyToken, authorizeRoles('DOCTOR'), labOrderController.creat
  *               properties:
  *                 message:
  *                   type: string
- *                   example: "Xác nhận đồng ý thành công"
- *                 txHash:
+ *                   example: "Chuẩn bị giao dịch thành công. Hãy ký bằng ví frontend (MetaMask)."
+ *                 action:
  *                   type: string
- *                   example: "0xabc123..."
- *                 status:
- *                   type: string
- *                   example: "CONSENTED"
+ *                   example: "CONSENT_LAB_ORDER"
+ *                 txRequest:
+ *                   type: object
  *       400:
  *         description: Order không ở trạng thái ORDERED hoặc blockchain error
  *       403:
@@ -200,12 +209,23 @@ Router.patch('/:id/consent', verifyToken, authorizeRoles('PATIENT'), ehrWorkflow
 
 /**
  * @swagger
+ * /v1/lab-orders/{id}/consent/confirm:
+ *   patch:
+ *     summary: Xác nhận đồng ý xét nghiệm sau khi MetaMask ký
+ *     tags: [LabOrder]
+ *     security:
+ *       - bearerAuth: []
+ */
+Router.patch('/:id/consent/confirm', verifyToken, authorizeRoles('PATIENT'), ehrWorkflowController.confirmConsentToOrder);
+
+/**
+ * @swagger
  * /v1/lab-orders/{id}/receive:
  *   patch:
- *     summary: Lab Tech tiếp nhận order (Step 5)
+ *     summary: Chuẩn bị giao dịch tiếp nhận order (MetaMask prepare)
  *     description: |
  *       Lab Tech tiếp nhận lab order đã được bệnh nhân đồng ý (status = CONSENTED).
- *       Backend gọi EHRManager.updateRecordStatus(recordId, IN_PROGRESS) on-chain.
+ *       Backend chỉ validate và trả txRequest để frontend ký/broadcast qua MetaMask.
  *       Chỉ lab record (GENERAL, HIV_TEST, DIABETES_TEST, LAB_RESULT) mới được lab tech tiếp nhận.
  *     tags: [LabOrder]
  *     security:
@@ -220,7 +240,7 @@ Router.patch('/:id/consent', verifyToken, authorizeRoles('PATIENT'), ehrWorkflow
  *         example: "6801a2b3c4d5e6f789012345"
  *     responses:
  *       200:
- *         description: Tiếp nhận order thành công
+ *         description: Chuẩn bị giao dịch tiếp nhận order thành công
  *         content:
  *           application/json:
  *             schema:
@@ -228,13 +248,12 @@ Router.patch('/:id/consent', verifyToken, authorizeRoles('PATIENT'), ehrWorkflow
  *               properties:
  *                 message:
  *                   type: string
- *                   example: "Tiếp nhận order thành công"
- *                 txHash:
+ *                   example: "Chuẩn bị giao dịch thành công. Hãy ký bằng ví frontend (MetaMask)."
+ *                 action:
  *                   type: string
- *                   example: "0xabc123..."
- *                 status:
- *                   type: string
- *                   example: "IN_PROGRESS"
+ *                   example: "RECEIVE_LAB_ORDER"
+ *                 txRequest:
+ *                   type: object
  *       400:
  *         description: Order không ở trạng thái CONSENTED
  *       403:
@@ -244,12 +263,24 @@ Router.patch('/:id/receive', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflo
 
 /**
  * @swagger
+ * /v1/lab-orders/{id}/receive/confirm:
+ *   patch:
+ *     summary: Xác nhận tiếp nhận order sau khi MetaMask ký
+ *     tags: [LabOrder]
+ *     security:
+ *       - bearerAuth: []
+ */
+Router.patch('/:id/receive/confirm', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflowController.confirmReceiveOrder);
+
+/**
+ * @swagger
  * /v1/lab-orders/{id}/post-result:
  *   patch:
- *     summary: Lab Tech post kết quả xét nghiệm (Step 6)
+ *     summary: Chuẩn bị giao dịch post kết quả xét nghiệm (MetaMask prepare)
  *     description: |
  *       Lab Tech nhập kết quả xét nghiệm kỹ thuật (các chỉ số như glucose, HbA1c...).
- *       Backend tính keccak256 hash của kết quả → gọi EHRManager.postLabResult() on-chain (data stored in MongoDB).
+ *       Backend tính keccak256 hash của kết quả + validate nghiệp vụ, sau đó trả txRequest để frontend ký/broadcast.
+ *       Sau khi tx mined, frontend gọi endpoint confirm để backend ghi DB + audit.
  *       Kết quả bị LOCK ngay sau khi post - không ai sửa được sau đó (kể cả bác sĩ hay admin).
  *       Status chuyển sang RESULT_POSTED.
  *     tags: [LabOrder]
@@ -283,7 +314,7 @@ Router.patch('/:id/receive', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflo
  *                 note: "Glucose và HbA1c đều cao hơn bình thường, gợi ý tiểu đường type 2"
  *     responses:
  *       200:
- *         description: Post kết quả thành công
+ *         description: Chuẩn bị giao dịch post kết quả thành công
  *         content:
  *           application/json:
  *             schema:
@@ -291,48 +322,14 @@ Router.patch('/:id/receive', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflo
  *               properties:
  *                 message:
  *                   type: string
- *                   example: "Post kết quả thành công"
- *                 orderId:
+ *                   example: "Chuẩn bị giao dịch thành công. Hãy ký bằng ví frontend (MetaMask)."
+ *                 action:
  *                   type: string
- *                   example: "6801a2b3c4d5e6f789012345"
- *                 blockchainRecordId:
- *                   type: string
- *                   example: "0x123abc..."
- *                 txHash:
- *                   type: string
- *                   example: "0xabc123..."
- *                 status:
- *                   type: string
- *                   example: "RESULT_POSTED"
- *                 labResultHash:
- *                   type: string
- *                   description: keccak256 hash của kết quả (lưu trên blockchain để verify)
- *                   example: "0xdef456..."
- *                 updatedAt:
- *                   type: string
- *                   format: date-time
- *                   example: "2026-04-18T15:30:45.123Z"
- *                 testResultId:
- *                   type: string
- *                   description: MongoDB ID của test result được tạo (null nếu fail)
- *                   example: "6801xyz789def..."
- *                   nullable: true
- *                 testResultStatus:
- *                   type: string
- *                   enum: [SUCCESS, FAILED, PENDING]
- *                   description: Kết quả của quá trình retry tạo TestResult (Issue B fix)
- *                   example: "SUCCESS"
- *                 testResultRetryCount:
- *                   type: integer
- *                   minimum: 0
- *                   maximum: 3
- *                   description: Số lần đã retry khi tạo TestResult (exponential backoff 1s→2s→4s)
- *                   example: 1
- *                 testResultError:
- *                   type: string
- *                   description: Error message nếu TestResult fail sau 3 lần retry (null nếu success)
- *                   example: null
- *                   nullable: true
+ *                   example: "POST_LAB_RESULT"
+ *                 txRequest:
+ *                   type: object
+ *                 details:
+ *                   type: object
  *       400:
  *         description: Order không ở trạng thái IN_PROGRESS hoặc blockchain error
  *       403:
@@ -342,9 +339,20 @@ Router.patch('/:id/post-result', verifyToken, authorizeRoles('LAB_TECH'), ehrWor
 
 /**
  * @swagger
+ * /v1/lab-orders/{id}/post-result/confirm:
+ *   patch:
+ *     summary: Xác nhận post kết quả sau khi MetaMask ký
+ *     tags: [LabOrder]
+ *     security:
+ *       - bearerAuth: []
+ */
+Router.patch('/:id/post-result/confirm', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflowController.confirmPostLabResult);
+
+/**
+ * @swagger
  * /v1/lab-orders/{id}/interpretation:
  *   patch:
- *     summary: Bác sĩ thêm diễn giải lâm sàng (Step 7)
+ *     summary: Chuẩn bị giao dịch thêm diễn giải lâm sàng (MetaMask prepare)
  *     description: |
  *       Bác sĩ xem kết quả kỹ thuật từ lab tech và nhập diễn giải lâm sàng (nhận định, khuyến nghị điều trị).
  *       
@@ -363,7 +371,8 @@ Router.patch('/:id/post-result', verifyToken, authorizeRoles('LAB_TECH'), ehrWor
  *       - Result: Doctor vets every diagnosis, UX is seamless
  *       - Analogous to: Epic EHR, OpenMRS, production systems
  *       
- *       Backend tính keccak256 hash của diễn giải → gọi EHRManager.addClinicalInterpretation() on-chain (data stored in MongoDB).
+ *       Backend tính keccak256 hash của diễn giải + validate nghiệp vụ, sau đó trả txRequest để frontend ký/broadcast.
+ *       Frontend gọi endpoint confirm sau khi tx mined để backend cập nhật DB và audit.
  *       Diễn giải chỉ lưu hash on-chain, nội dung thực tế hoàn toàn off-chain (bảo mật).
  *       Status chuyển sang DOCTOR_REVIEWED.
  *     tags: [LabOrder]
@@ -392,7 +401,7 @@ Router.patch('/:id/post-result', verifyToken, authorizeRoles('LAB_TECH'), ehrWor
  *                 confirmedDiagnosis: "Tiểu đường type 2 (confirmed by HbA1c 7.2%)"
  *     responses:
  *       200:
- *         description: Thêm diễn giải thành công
+ *         description: Chuẩn bị giao dịch thêm diễn giải thành công
  *         content:
  *           application/json:
  *             schema:
@@ -400,17 +409,12 @@ Router.patch('/:id/post-result', verifyToken, authorizeRoles('LAB_TECH'), ehrWor
  *               properties:
  *                 message:
  *                   type: string
- *                   example: "Thêm diễn giải lâm sàng thành công"
- *                 txHash:
+ *                   example: "Chuẩn bị giao dịch thành công. Hãy ký bằng ví frontend (MetaMask)."
+ *                 action:
  *                   type: string
- *                   example: "0xabc123..."
- *                 status:
- *                   type: string
- *                   example: "DOCTOR_REVIEWED"
- *                 interpretationHash:
- *                   type: string
- *                   description: keccak256 hash của diễn giải (lưu trên blockchain để verify)
- *                   example: "0x789abc..."
+ *                   example: "ADD_CLINICAL_INTERPRETATION"
+ *                 txRequest:
+ *                   type: object
  *       400:
  *         description: Order không ở trạng thái RESULT_POSTED hoặc blockchain error
  *       403:
@@ -420,12 +424,24 @@ Router.patch('/:id/interpretation', verifyToken, authorizeRoles('DOCTOR'), ehrWo
 
 /**
  * @swagger
+ * /v1/lab-orders/{id}/interpretation/confirm:
+ *   patch:
+ *     summary: Xác nhận thêm diễn giải sau khi MetaMask ký
+ *     tags: [LabOrder]
+ *     security:
+ *       - bearerAuth: []
+ */
+Router.patch('/:id/interpretation/confirm', verifyToken, authorizeRoles('DOCTOR'), ehrWorkflowController.confirmClinicalInterpretation);
+
+/**
+ * @swagger
  * /v1/lab-orders/{id}/complete:
  *   patch:
- *     summary: Bác sĩ chốt hồ sơ (Step 8)
+ *     summary: Chuẩn bị giao dịch chốt hồ sơ (MetaMask prepare)
  *     description: |
  *       Bác sĩ xác nhận hồ sơ xét nghiệm hoàn tất.
- *       Backend gọi EHRManager.updateRecordStatus(recordId, COMPLETE) on-chain.
+ *       Backend chỉ validate và trả txRequest để frontend ký/broadcast qua MetaMask.
+ *       Frontend gọi endpoint confirm để backend xác nhận txHash và cập nhật DB.
  *       Sau khi COMPLETE, không ai được sửa bất kỳ field nào của record.
  *     tags: [LabOrder]
  *     security:
@@ -440,7 +456,7 @@ Router.patch('/:id/interpretation', verifyToken, authorizeRoles('DOCTOR'), ehrWo
  *         example: "6801a2b3c4d5e6f789012345"
  *     responses:
  *       200:
- *         description: Chốt hồ sơ thành công
+ *         description: Chuẩn bị giao dịch chốt hồ sơ thành công
  *         content:
  *           application/json:
  *             schema:
@@ -448,19 +464,29 @@ Router.patch('/:id/interpretation', verifyToken, authorizeRoles('DOCTOR'), ehrWo
  *               properties:
  *                 message:
  *                   type: string
- *                   example: "Chốt hồ sơ thành công"
- *                 txHash:
+ *                   example: "Chuẩn bị giao dịch thành công. Hãy ký bằng ví frontend (MetaMask)."
+ *                 action:
  *                   type: string
- *                   example: "0xabc123..."
- *                 status:
- *                   type: string
- *                   example: "COMPLETE"
+ *                   example: "COMPLETE_RECORD"
+ *                 txRequest:
+ *                   type: object
  *       400:
  *         description: Order không ở trạng thái DOCTOR_REVIEWED hoặc blockchain error
  *       403:
  *         description: Không phải bác sĩ hoặc không có quyền với bệnh nhân này
  */
 Router.patch('/:id/complete', verifyToken, authorizeRoles('DOCTOR'), ehrWorkflowController.completeRecord);
+
+/**
+ * @swagger
+ * /v1/lab-orders/{id}/complete/confirm:
+ *   patch:
+ *     summary: Xác nhận chốt hồ sơ sau khi MetaMask ký
+ *     tags: [LabOrder]
+ *     security:
+ *       - bearerAuth: []
+ */
+Router.patch('/:id/complete/confirm', verifyToken, authorizeRoles('DOCTOR'), ehrWorkflowController.confirmCompleteRecord);
 
 /**
  * @swagger
@@ -527,7 +553,7 @@ Router.get('/:id', verifyToken, labOrderController.getLabOrderDetail);
 Router.get('/', verifyToken, labOrderController.getLabOrders);
 
 /**
- * ⚠️ DEPRECATED ROUTE REMOVED
+ * DEPRECATED ROUTE REMOVED
  * 
  * Old Route: PATCH /:id/status (was: labOrder.workflow.controller.updateSampleStatus)
  * Associated Dead Code:
@@ -536,10 +562,10 @@ Router.get('/', verifyToken, labOrderController.getLabOrders);
  * 
  * Replacement:
  * All workflow state transitions now go through ehrWorkflow service with proper:
- * ✅ Role-based access control
- * ✅ Blockchain integration
- * ✅ Patient consent validation
- * ✅ Audit trail
+ * Role-based access control
+ * Blockchain integration
+ * Patient consent validation
+ * Audit trail
  * 
  * Workflow Endpoints:
  * - POST /v1/lab-orders/:id/consent (Patient consent)
@@ -558,13 +584,13 @@ Router.get('/', verifyToken, labOrderController.getLabOrders);
  *   delete:
  *     summary: Xóa lab order và cleanup medical record linking
  *     description: |
- *       🗑️ Xóa lab order hoàn toàn từ hệ thống.
+ *       Xóa lab order hoàn toàn từ hệ thống.
  *       
- *       ⚠️ CHỈ được phép nếu status = ORDERED (chưa ai tiếp nhận)
+ *       CHỈ được phép nếu status = ORDERED (chưa ai tiếp nhận)
  *       
- *       🔗 Cleanup: Tự động remove lab order ID khỏi medical record.relatedLabOrderIds
+ *       Cleanup: Tự động remove lab order ID khỏi medical record.relatedLabOrderIds
  *       
- *       📝 BẤT CÔNG KÍCH: Sẽ log audit trail
+ *       BẤT CÔNG KÍCH: Sẽ log audit trail
  *     tags: [LabOrder]
  *     security:
  *       - bearerAuth: []
@@ -607,15 +633,15 @@ Router.delete('/:labOrderId', verifyToken, labOrderController.deleteLabOrder);
  *   patch:
  *     summary: Hủy lab order (giữ record, chỉ thay status)
  *     description: |
- *       ⛔ Hủy lab order nhưng giữ lại dữ liệu (không xóa hoàn toàn).
+ *       Hủy lab order nhưng giữ lại dữ liệu (không xóa hoàn toàn).
  *       
  *       Status sẽ chuyển: {any} → CANCELLED
  *       
- *       🔗 Medical record VẪN giữ reference đến lab order này (để lịch sử)
+ *       Medical record VẪN giữ reference đến lab order này (để lịch sử)
  *       
- *       📝 Lý do hủy sẽ được log trong audit trail
+ *       Lý do hủy sẽ được log trong audit trail
  *       
- *       💡 Khác biệt:
+ *       Khác biệt:
  *       - DELETE: Xóa hoàn toàn, cleanup linking (chỉ ORDERED status)
  *       - CANCEL: Giữ record, thay status thành CANCELLED (bất kỳ status)
  *     tags: [LabOrder]
@@ -672,20 +698,21 @@ Router.patch('/:labOrderId/cancel', verifyToken, labOrderController.cancelLabOrd
 
 /**
  * @swagger
- * /v1/admin/lab-orders/assign:
+ * /v1/lab-orders/assign:
  *   post:
- *     summary: Admin phân công order cho lab tech (Vấn đề 3 - Fix)
+ *     summary: Bác sĩ phân công order cho lab tech
  *     description: |
- *       Admin phân công một lab order (status = CONSENTED) cho một lab tech cụ thể.
+ *       Bác sĩ phân công một lab order (status = CONSENTED) cho một lab tech cụ thể.
+ *       Chỉ bác sĩ đã tạo order mới được phép phân công.
  *       Lab tech sẽ chỉ thấy orders được phân công cho mình trong getLabOrders().
  *       
  *       **Dòng chảy:**
  *       1. Patient consents (status=CONSENTED, assignedLabTech=null)
- *       2. Admin calls this endpoint → set assignedLabTech = lab_tech_id
+ *       2. Doctor calls this endpoint → set assignedLabTech = lab_tech_id
  *       3. Lab tech logs in → GET /v1/lab-orders → sẽ thấy order này
  *       4. Lab tech accepts order → status=IN_PROGRESS
  *       5. Lab tech posts result → status=RESULT_POSTED
- *     tags: [Admin]
+ *     tags: [LabOrder]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -739,10 +766,10 @@ Router.patch('/:labOrderId/cancel', verifyToken, labOrderController.cancelLabOrd
  *       400:
  *         description: Order không ở status CONSENTED hoặc lab tech không hợp lệ
  *       403:
- *         description: Chỉ ADMIN được phép
+ *         description: Chỉ DOCTOR tạo order được phép
  *       404:
  *         description: Order hoặc lab tech không tìm thấy
  */
-Router.post('/admin/assign', verifyToken, authorizeRoles('ADMIN'), labOrderController.assignLabOrderToTech);
+Router.post('/assign', verifyToken, authorizeRoles('DOCTOR'), labOrderController.assignLabOrderToTech);
 
 export const labOrderRoute = Router;

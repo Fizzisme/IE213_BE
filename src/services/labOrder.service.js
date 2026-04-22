@@ -9,6 +9,102 @@ import { userModel } from '~/models/user.model';
 import { patientModel } from '~/models/patient.model';
 import { ethers } from 'ethers';
 import { normalizeWalletAddress, compareWalletAddresses } from '~/utils/wallet';  // [Sửa #5] Utility ví tập trung
+import metaMaskTxBuilder, { verifyTransactionOnBlockchain } from '~/utils/metaMaskTxBuilder';
+
+
+const toHexChainId = (chainId) => `0x${Number(chainId).toString(16)}`;
+
+const buildPrepareResponse = (action, preparedTx, details = {}) => {
+    const { unsignedTx, chainId, functionSignature } = preparedTx;
+
+    return {
+        message: 'Chuẩn bị giao dịch thành công. Hãy ký bằng ví frontend (MetaMask).',
+        action,
+        txRequest: {
+            to: unsignedTx.to,
+            data: unsignedTx.data,
+            value: unsignedTx.value || '0',
+            chainId: toHexChainId(chainId),
+        },
+        suggestedTx: {
+            from: unsignedTx.from,
+            gasLimit: unsignedTx.gasLimit,
+            gasPrice: unsignedTx.gasPrice,
+            nonce: unsignedTx.nonce,
+        },
+        details: {
+            functionSignature,
+            chainId: Number(chainId),
+            ...details,
+        },
+    };
+};
+
+const prepareCreateLabOrder = async (data, currentUser) => {
+    const payload = { ...data };
+    delete payload.txHash;
+    return createLabOrder(payload, currentUser);
+};
+
+const confirmCreateLabOrder = async (data, currentUser) => {
+    if (!data?.txHash) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu txHash để xác nhận tạo lab order');
+    }
+    return createLabOrder(data, currentUser);
+};
+
+const verifyConfirmedTxByUser = async (walletAddress, txHash) => {
+    if (!txHash) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu txHash để xác nhận giao dịch');
+    }
+
+    const verification = await verifyTransactionOnBlockchain(txHash);
+    if (!verification.found) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy giao dịch trên blockchain');
+    }
+    if (!verification.confirmed) {
+        throw new ApiError(StatusCodes.CONFLICT, 'Giao dịch chưa được xác nhận trên blockchain');
+    }
+    if (verification.status !== 'SUCCESS') {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch thất bại trên blockchain');
+    }
+
+    if (!verification.from || verification.from.toLowerCase() !== walletAddress.toLowerCase()) {
+        throw new ApiError(
+            StatusCodes.FORBIDDEN,
+            `Giao dịch không thuộc về wallet hiện tại. tx.from=${verification.from}, wallet=${walletAddress}`
+        );
+    }
+
+    return verification;
+};
+
+const verifyTxFunctionCall = async ({ txHash, contract, functionName, argsValidator }) => {
+    const tx = await blockchainContracts.provider.getTransaction(txHash);
+    if (!tx) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy transaction data');
+    }
+
+    if (!tx.to || tx.to.toLowerCase() !== contract.target.toLowerCase()) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch không gửi tới contract đích');
+    }
+
+    const parsed = contract.interface.parseTransaction({
+        data: tx.data,
+        value: tx.value,
+    });
+
+    if (!parsed || parsed.name !== functionName) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, `Giao dịch không gọi đúng hàm ${functionName}`);
+    }
+
+    if (typeof argsValidator === 'function') {
+        const validArgs = argsValidator(parsed.args);
+        if (!validArgs) {
+            throw new ApiError(StatusCodes.BAD_REQUEST, `Args không khớp cho hàm ${functionName}`);
+        }
+    }
+};
 
 
 // Xác minh dữ liệu bệnh nhân từ DB
@@ -116,7 +212,8 @@ const createLabOrder = async (data, currentUser) => {
         sampleType,
         diagnosisCode,
         attachments, // tùy chọn
-        assignedLabTech // Lab tech được doctor chỉ định để làm xét nghiệm (ObjectId của user LAB_TECH)
+        assignedLabTech, // Lab tech được doctor chỉ định để làm xét nghiệm (ObjectId của user LAB_TECH)
+        txHash: confirmedTxHash,
     } = data;
 
     // Bắt buộc: medicalRecordId PHẢI được cung cấp (quy tắc bảo mật)
@@ -217,7 +314,7 @@ const createLabOrder = async (data, currentUser) => {
     // HIV_TEST -> SENSITIVE (3), các loại còn lại -> FULL (2)
     const requiredLevel = recordType === 'HIV_TEST' ? 3 : 2;
 
-    // 🆕 4.5. Xác thực lab tech được chỉ định
+    // 4.5. Xác thực lab tech được chỉ định
     // Kiểm tra: lab tech tồn tại, role = LAB_TECH, status = ACTIVE
     const labTech = await userModel.findById(assignedLabTech);
     if (!labTech) {
@@ -235,26 +332,18 @@ const createLabOrder = async (data, currentUser) => {
             `Lab tech ${labTech.name} không hoạt động (status=${labTech.status})`
         );
     }
-    console.log(`[Lab Order] ✅ Lab tech xác thực: ${labTech.name} (${assignedLabTech})`);
+    console.log(`[Lab Order] Lab tech xác thực: ${labTech.name} (${assignedLabTech})`);
+
+    const normalizedDoctorWalletForTx = normalizeWalletAddress(currentUser.walletAddress);
 
     // 5. Kiểm tra quyền truy cập từ blockchain
     // Bác sĩ chỉ có thể tạo order nếu bệnh nhân đã cấp quyền
-    // Phải dùng blockchain doctor wallet, không phải JWT token
     try {
-        // Lấy địa chỉ ví bác sĩ từ exported doctorWallet
-        const doctorWalletAddress = blockchainContracts.doctorWallet?.address;
-        if (!doctorWalletAddress) {
-            throw new ApiError(
-                StatusCodes.INTERNAL_SERVER_ERROR,
-                'Doctor Ethereum wallet not initialized. Check TEST_DOCTOR_PRIVATE_KEY in .env and restart server.'
-            );
-        }
-
-        console.log(`[Lab Order] Kiểm tra quyền: bệnh nhân=${patientAddress}, bác sĩ=${doctorWalletAddress}, mức=${requiredLevel}`);
+        console.log(`[Lab Order] Kiểm tra quyền: bệnh nhân=${patientAddress}, bác sĩ=${normalizedDoctorWalletForTx}, mức=${requiredLevel}`);
 
         const hasAccess = await blockchainContracts.read.accessControl.checkAccessLevel(
             patientAddress.toLowerCase(),
-            doctorWalletAddress.toLowerCase(),
+            normalizedDoctorWalletForTx.toLowerCase(),
             requiredLevel
         );
         if (!hasAccess) {
@@ -268,75 +357,76 @@ const createLabOrder = async (data, currentUser) => {
         throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, `Kiểm tra quyền truy cập thất bại: ${accessError.message}`);
     }
 
-    // 5. Gọi addRecord trên blockchain EHRManager
+    const recordTypeNum = RECORD_TYPE_MAP[recordType];
+    if (typeof recordTypeNum !== 'number' || recordTypeNum < 0 || recordTypeNum > 5) {
+        throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            `Invalid recordType: ${recordType} maps to ${recordTypeNum}. Expected 0-5.`
+        );
+    }
+
+    if (typeof requiredLevel !== 'number' || requiredLevel < 0 || requiredLevel > 3) {
+        throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            `Invalid requiredLevel: ${requiredLevel}. Expected 0-3.`
+        );
+    }
+
+    if (!orderHash || orderHash.length !== 66 || !orderHash.startsWith('0x')) {
+        throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            `Invalid orderHash: ${orderHash}. Expected 0x prefixed 64-char hex string.`
+        );
+    }
+
+    if (!confirmedTxHash) {
+        const preparedTx = await metaMaskTxBuilder.prepareAddRecordTx(
+            normalizedDoctorWalletForTx,
+            patientAddress,
+            recordTypeNum,
+            requiredLevel,
+            orderHash
+        );
+
+        return buildPrepareResponse('CREATE_LAB_ORDER', preparedTx, {
+            patientAddress: normalizeWalletAddress(patientAddress),
+            recordType,
+            requiredLevel,
+            orderHash,
+            medicalRecordId,
+            assignedLabTech,
+        });
+    }
+
+    await verifyConfirmedTxByUser(normalizedDoctorWalletForTx, confirmedTxHash);
+
+    await verifyTxFunctionCall({
+        txHash: confirmedTxHash,
+        contract: blockchainContracts.read.ehrManager,
+        functionName: 'addRecord',
+        argsValidator: (args) => {
+            const argPatient = args?.[0]?.toLowerCase();
+            const argRecordType = Number(args?.[1]);
+            const argRequiredLevel = Number(args?.[2]);
+            const argOrderHash = args?.[3];
+
+            return (
+                argPatient === normalizeWalletAddress(patientAddress).toLowerCase()
+                && argRecordType === recordTypeNum
+                && argRequiredLevel === requiredLevel
+                && argOrderHash?.toLowerCase() === orderHash.toLowerCase()
+            );
+        },
+    });
+
+    // 6. Xác nhận và lấy recordId từ event
     let recordId = null;
-    let txHash = null;
+    let txHash = confirmedTxHash;
     try {
-        // Kiểm tra doctor contract instance trước khi gọi
-        if (!blockchainContracts.doctor?.ehrManager) {
-            throw new ApiError(
-                StatusCodes.INTERNAL_SERVER_ERROR,
-                'Doctor Ethereum wallet not connected. Check TEST_DOCTOR_PRIVATE_KEY in .env and restart server.'
-            );
+        const receipt = await blockchainContracts.provider.getTransactionReceipt(confirmedTxHash);
+        if (!receipt || receipt.status !== 1) {
+            throw new ApiError(StatusCodes.CONFLICT, 'Giao dịch chưa được xác nhận thành công trên blockchain');
         }
-
-        // Kiểm tra loại dữ liệu và giá trị của arguments
-        const recordTypeNum = RECORD_TYPE_MAP[recordType];
-        if (typeof recordTypeNum !== 'number' || recordTypeNum < 0 || recordTypeNum > 5) {
-            throw new ApiError(
-                StatusCodes.BAD_REQUEST,
-                `Invalid recordType: ${recordType} maps to ${recordTypeNum}. Expected 0-5.`
-            );
-        }
-
-        if (typeof requiredLevel !== 'number' || requiredLevel < 0 || requiredLevel > 3) {
-            throw new ApiError(
-                StatusCodes.BAD_REQUEST,
-                `Invalid requiredLevel: ${requiredLevel}. Expected 0-3.`
-            );
-        }
-
-        if (!orderHash || orderHash.length !== 66 || !orderHash.startsWith('0x')) {
-            throw new ApiError(
-                StatusCodes.BAD_REQUEST,
-                `Invalid orderHash: ${orderHash}. Expected 0x prefixed 64-char hex string.`
-            );
-        }
-
-        console.log('[Lab Order] Kiểm tra hợp lệ - Sẵn sàng gọi blockchain');
-        console.log(`[Lab Order] Gọi blockchain: addRecord(${patientAddress}, ${recordTypeNum}, ${requiredLevel}, ${orderHash})`);
-
-        let tx;
-        try {
-            tx = await blockchainContracts.doctor.ehrManager.addRecord(
-                patientAddress,
-                recordTypeNum,      // uint8 (0-3)
-                requiredLevel,      // uint8 (0-3)
-                orderHash           // bytes32
-            );
-            console.log(`[Lab Order] Giao dịch được gửi: ${tx.hash}`);
-        } catch (txError) {
-            console.error(`[Lab Order] Gửi giao dịch thất bại:`, txError.message);
-            throw txError;
-        }
-
-        // Chờ giao dịch được xác nhận (timeout 30 giây)
-        let receipt;
-        try {
-            console.log(`[Lab Order] Chờ xác nhận giao dịch...`);
-            receipt = await Promise.race([
-                tx.wait(),
-                new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Giao dịch timeout (30 giây)')), 30000)
-                )
-            ]);
-            console.log(`[Lab Order] Giao dịch đã xác nhận: ${receipt.hash}`);
-        } catch (waitError) {
-            console.error('[Lab Order] Chờ giao dịch thất bại:', waitError.message);
-            throw waitError;
-        }
-
-        txHash = receipt.hash;
 
         // Lấy recordId từ event RecordAdded
         const recordAddedEvent = receipt.logs?.find(log => {
@@ -351,12 +441,14 @@ const createLabOrder = async (data, currentUser) => {
         if (recordAddedEvent) {
             const parsed = blockchainContracts.read.ehrManager.interface.parseLog(recordAddedEvent);
             recordId = parsed.args.recordId.toString();
+        } else {
+            throw new ApiError(StatusCodes.BAD_REQUEST, 'Không tìm thấy event RecordAdded trong transaction');
         }
     } catch (blockchainError) {
         throw new ApiError(StatusCodes.BAD_REQUEST, `Gọi blockchain addRecord thất bại: ${blockchainError.message}`);
     }
 
-    // 6. Lưu vào MongoDB để theo dõi
+    // 7. Lưu vào MongoDB để theo dõi
     // Lấy địa chỉ ví từ DB để tránh bị giả mạo
     const doctorWalletAddress = await getWalletAddress(currentUser);
     const normalizedCreatedBy = normalizeWalletAddress(doctorWalletAddress);
@@ -373,12 +465,12 @@ const createLabOrder = async (data, currentUser) => {
         diagnosisCode,
         attachments,
         recordType,
-        requiredLevel,  // ✅ SAVE THIS! (0=NONE, 1=EMERGENCY, 2=FULL, 3=SENSITIVE)
+        requiredLevel,  // SAVE THIS! (0=NONE, 1=EMERGENCY, 2=FULL, 3=SENSITIVE)
         sampleStatus: 'ORDERED',
         blockchainRecordId: recordId,
         orderHash,
         // [GHI CHÚC LỤC ĐỎ] Ghi đôi chiều: medicalRecordId được CẬP ĐỊNH bởi bác sĩ (đã xác thực)
-        // ✅ NO auto-attach - Doctor must choose which record this lab belongs to
+        // NO auto-attach - Doctor must choose which record this lab belongs to
         relatedMedicalRecordId: medicalRecordId,  // Đã xác thực ở trên↑
         // 🆕 assignedLabTech được doctor chỉ định (đã xác thực)
         assignedLabTech: assignedLabTech,
@@ -493,7 +585,7 @@ const getLabOrders = async (currentUser, query) => {
 
     const filter = {};
 
-    // 🧪 DEBUG LOG
+    //  DEBUG LOG
     console.log(`[getLabOrders] role=${user.role}, walletAddress=${normalizedWalletAddress}, status=${status}`);
 
     // Kiểm soát truy cập theo vai trò
@@ -541,7 +633,7 @@ const getLabOrders = async (currentUser, query) => {
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // 🧪 QUERY LOG WITH ENHANCED DIAGNOSTICS
+    // QUERY LOG WITH ENHANCED DIAGNOSTICS
     console.log(`[getLabOrders] BEFORE QUERY - Filter:`, JSON.stringify(filter));
     console.log(`[getLabOrders] normalizedWalletAddress value:`, normalizedWalletAddress);
     console.log(`[getLabOrders] normalizedWalletAddress type:`, typeof normalizedWalletAddress);
@@ -579,12 +671,12 @@ const getLabOrders = async (currentUser, query) => {
 };
 
 /**
- * 🗑️ Delete lab order + cleanup medical record linking
+ * Delete lab order + cleanup medical record linking
  * Xóa chỉ định xét nghiệm và tự động remove khỏi medical record
  */
 const deleteLabOrder = async (labOrderId) => {
     try {
-        // 1️⃣ Lấy lab order trước khi xóa (để biết relatedMedicalRecordId)
+        // 1️. Lấy lab order trước khi xóa (để biết relatedMedicalRecordId)
         const labOrder = await labOrderModel.LabOrderModel.findById(labOrderId);
 
         if (!labOrder) {
@@ -594,7 +686,7 @@ const deleteLabOrder = async (labOrderId) => {
             );
         }
 
-        // 2️⃣ Không cho phép xóa nếu đã tiến hành test (status >= CONSENTED)
+        // 2️. Không cho phép xóa nếu đã tiến hành test (status >= CONSENTED)
         const protectedStatuses = ['CONSENTED', 'IN_PROGRESS', 'RESULT_POSTED', 'DOCTOR_REVIEWED', 'COMPLETE'];
         if (protectedStatuses.includes(labOrder.sampleStatus)) {
             throw new ApiError(
@@ -605,9 +697,9 @@ const deleteLabOrder = async (labOrderId) => {
 
         // 3️⃣ Xóa lab order khỏi MongoDB
         await labOrderModel.LabOrderModel.deleteOne({ _id: labOrderId });
-        console.log(`✅ Lab order ${labOrderId} đã xóa từ DB`);
+        console.log(`Lab order ${labOrderId} đã xóa từ DB`);
 
-        // 4️⃣ Remove khỏi medical record array (cleanup linking)
+        // 4️. Remove khỏi medical record array (cleanup linking)
         if (labOrder.relatedMedicalRecordId) {
             const result = await medicalRecordModel.MedicalRecordModel.findByIdAndUpdate(
                 labOrder.relatedMedicalRecordId,
@@ -616,10 +708,10 @@ const deleteLabOrder = async (labOrderId) => {
                 },
                 { new: true }
             );
-            console.log(`✅ Lab order ${labOrderId} removed từ medical record ${labOrder.relatedMedicalRecordId}`);
+            console.log(`Lab order ${labOrderId} removed từ medical record ${labOrder.relatedMedicalRecordId}`);
         }
 
-        // 5️⃣ Log audit event
+        // 5️. Log audit event
         try {
             await auditLogModel.AuditLogModel.create({
                 entityType: 'LAB_ORDER',
@@ -634,7 +726,7 @@ const deleteLabOrder = async (labOrderId) => {
                 timestamp: new Date(),
             });
         } catch (auditErr) {
-            console.warn(`⚠️  Lỗi ghi audit log:`, auditErr.message);
+            console.warn(`Lỗi ghi audit log:`, auditErr.message);
         }
 
         return {
@@ -644,13 +736,13 @@ const deleteLabOrder = async (labOrderId) => {
             cleanedFromMedicalRecordId: labOrder.relatedMedicalRecordId,
         };
     } catch (error) {
-        console.error(`❌ Error deleting lab order:`, error.message);
+        console.error(`Error deleting lab order:`, error.message);
         throw error;
     }
 };
 
 /**
- * 🚫 Cancel lab order (nhưng giữ lại record)
+ * Cancel lab order (nhưng giữ lại record)
  * Thay đổi status thành CANCELLED, không xóa data
  */
 const cancelLabOrder = async (labOrderId, reason = 'Hủy yêu cầu') => {
@@ -702,7 +794,7 @@ const cancelLabOrder = async (labOrderId, reason = 'Hủy yêu cầu') => {
 
         console.log(`Lab order ${labOrderId} đã cancel (${previousStatus} → CANCELLED)`);
 
-        // 4️KHÔNG xóa khỏi medical record - chỉ đổi status
+        // KHÔNG xóa khỏi medical record - chỉ đổi status
         // Vì order này vẫn có thể được xem lịch sử
 
         // 5️Log audit event
@@ -738,14 +830,24 @@ const cancelLabOrder = async (labOrderId, reason = 'Hủy yêu cầu') => {
     }
 };
 
-// [Vấn đề 3] Admin assign order cho lab tech
+// [Vấn đề 3] Doctor assign order cho lab tech
 const assignLabOrderToTech = async (currentUser, labOrderId, labTechId) => {
-    // Xác thực: chỉ ADMIN được phép assign
-    await verifyRole(currentUser, 'ADMIN');
+    // Xác thực: chỉ DOCTOR được phép assign
+    await verifyRole(currentUser, 'DOCTOR');
+
+    const doctorWalletAddress = await getWalletAddress(currentUser);
+    const normalizedDoctorWallet = normalizeWalletAddress(doctorWalletAddress);
 
     const labOrder = await labOrderModel.LabOrderModel.findById(labOrderId);
     if (!labOrder) {
         throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy lab order');
+    }
+
+    if (labOrder.createdBy?.toLowerCase() !== normalizedDoctorWallet.toLowerCase()) {
+        throw new ApiError(
+            StatusCodes.FORBIDDEN,
+            'Chỉ bác sĩ tạo order mới được phân công lab tech cho order này'
+        );
     }
 
     // Kiểm tra: status phải là CONSENTED (chưa assign)
@@ -777,18 +879,17 @@ const assignLabOrderToTech = async (currentUser, labOrderId, labTechId) => {
     // Ghi audit log
     await auditLogModel.createLog({
         userId: currentUser._id,
+        walletAddress: normalizedDoctorWallet,
         action: 'ASSIGN_LAB_ORDER',
         entityType: 'LAB_ORDER',
         entityId: labOrder._id,
         status: 'SUCCESS',
         details: {
-            note: `Admin assigned order ${labOrderId} to lab tech ${labTech.name}`,
+            note: `Doctor assigned order ${labOrderId} to lab tech ${labTech.name}`,
             assignedLabTechId: labTechId,
             assignedLabTechName: labTech.name,
         },
     });
-
-    console.log(`[Lab Order] Assigned order ${labOrderId} to lab tech ${labTech.name}`);
 
     return {
         message: 'Phân công order thành công',
@@ -804,7 +905,8 @@ const assignLabOrderToTech = async (currentUser, labOrderId, labTechId) => {
 };
 
 export const labOrderService = {
-    createLabOrder,
+    prepareCreateLabOrder,
+    confirmCreateLabOrder,
     getLabOrderDetail,
     getLabOrders,
     deleteLabOrder,
