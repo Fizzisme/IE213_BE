@@ -44,6 +44,20 @@ const normalizeDurationHours = (durationHours, expiresAt) => {
     return finalDurationHours;
 };
 
+const getGrantState = async (patientAddress, accessorAddress) => {
+    const grant = await blockchainContracts.read.accessControl.getAccessGrant(patientAddress, accessorAddress);
+    const now = Math.floor(Date.now() / 1000);
+    const expiresAt = Number(grant.expiresAt || 0);
+    const isExpired = expiresAt > 0 && expiresAt <= now;
+
+    return {
+        ...grant,
+        expiresAt,
+        isExpired,
+        isActiveAndUsable: Boolean(grant.isActive) && !isExpired,
+    };
+};
+
 const buildPrepareResponse = (action, preparedTx, details = {}) => {
     const { unsignedTx, chainId, functionSignature } = preparedTx;
 
@@ -131,26 +145,12 @@ const grantAccess = async (currentUser, data) => {
     mapLevelToAccessLevel(level);
 
     try {
-        // Check existing grant to preserve business logic consistency
-        try {
-            const existingGrant = await blockchainContracts.read.accessControl.getAccessGrant(
-                currentUser.walletAddress,
-                accessorAddress
+        const existingGrant = await getGrantState(currentUser.walletAddress, accessorAddress);
+        if (existingGrant.isActiveAndUsable) {
+            throw new ApiError(
+                StatusCodes.BAD_REQUEST,
+                'Accessor đang có quyền truy cập active. Vui lòng revoke trước khi cấp mới.'
             );
-
-            if (existingGrant.isActive) {
-                throw new ApiError(
-                    StatusCodes.BAD_REQUEST,
-                    'Accessor đang có quyền truy cập active. Vui lòng revoke trước khi cấp mới.'
-                );
-            }
-        } catch (checkErr) {
-            if (checkErr instanceof ApiError) throw checkErr;
-
-            // Nếu chưa từng có grant thì vẫn cho phép prepare grant
-            if (!checkErr.message?.toLowerCase().includes('not found')) {
-                throw new ApiError(StatusCodes.BAD_REQUEST, `Không thể xác minh grant hiện tại: ${checkErr.message}`);
-            }
         }
 
         const preparedTx = await prepareGrantAccessTx(
@@ -238,18 +238,9 @@ const updateAccess = async (currentUser, data) => {
 
     try {
         // CHECK first: Verify access exists before updating
-        try {
-            const existingGrant = await blockchainContracts.read.accessControl.getAccessGrant(
-                currentUser.walletAddress,
-                accessorAddress
-            );
-
-            if (!existingGrant.isActive) {
-                throw new ApiError(StatusCodes.NOT_FOUND, 'Access grant not found or already revoked');
-            }
-        } catch (checkErr) {
-            if (checkErr instanceof ApiError) throw checkErr;
-            throw new ApiError(StatusCodes.BAD_REQUEST, `Cannot verify existing access: ${checkErr.message}`);
+        const existingGrant = await getGrantState(currentUser.walletAddress, accessorAddress);
+        if (!existingGrant.isActive || existingGrant.isExpired) {
+            throw new ApiError(StatusCodes.NOT_FOUND, 'Access grant không tồn tại, đã bị thu hồi hoặc đã hết hạn');
         }
 
         const preparedTx = await prepareUpdateAccessTx(
@@ -333,13 +324,9 @@ const revokeAccess = async (currentUser, data) => {
     }
 
     try {
-        const existingGrant = await blockchainContracts.read.accessControl.getAccessGrant(
-            currentUser.walletAddress,
-            accessorAddress
-        );
-
-        if (!existingGrant.isActive) {
-            throw new ApiError(StatusCodes.NOT_FOUND, 'Grant không tồn tại hoặc đã bị thu hồi');
+        const existingGrant = await getGrantState(currentUser.walletAddress, accessorAddress);
+        if (!existingGrant.isActive || existingGrant.isExpired) {
+            throw new ApiError(StatusCodes.NOT_FOUND, 'Grant không tồn tại, đã bị thu hồi hoặc đã hết hạn');
         }
 
         const preparedTx = await prepareRevokeAccessTx(

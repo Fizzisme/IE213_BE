@@ -240,20 +240,25 @@ export const prepareUpdateAccessTx = async (patientAddress, accessorAddress, lev
         throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, err.message)
     }
 }
-
-// ============================================================================
 // DOCTOR OPERATIONS
 // ============================================================================
 
 /**
  * prepareAddRecordTx
  * Bác sĩ tạo lab order mới.
- * Contract V4: addRecord(patient, recordType, requiredLevel, orderHash)
- * [Fix #5] Bỏ orderIpfsHash — contract V4 không còn tham số này.
+ * Contract: addRecord(patient, recordType, requiredLevel, orderHash, orderIpfsHash, assignedLabTech)
  */
-export const prepareAddRecordTx = async (doctorAddress, patientAddress, recordTypeNum, requiredLevel, orderHash) => {
+export const prepareAddRecordTx = async (
+    doctorAddress,
+    patientAddress,
+    recordTypeNum,
+    requiredLevel,
+    orderHash,
+    orderIpfsHash = '',
+    assignedLabTech,
+) => {
     try {
-        if (!ethers.isAddress(doctorAddress) || !ethers.isAddress(patientAddress)) {
+        if (!ethers.isAddress(doctorAddress) || !ethers.isAddress(patientAddress) || !ethers.isAddress(assignedLabTech)) {
             throw new ApiError(StatusCodes.BAD_REQUEST, 'Địa chỉ không hợp lệ')
         }
         if (!orderHash) {
@@ -265,12 +270,14 @@ export const prepareAddRecordTx = async (doctorAddress, patientAddress, recordTy
             throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'EHRManager contract chưa khởi tạo')
         }
 
-        // Contract V4: addRecord(address patient, RecordType, AccessLevel, bytes32 orderHash)
+        // Contract: addRecord(address,uint8,uint8,bytes32,string,address)
         const encodedData = ehrManager.interface.encodeFunctionData('addRecord', [
             patientAddress,
             recordTypeNum,
             requiredLevel,
             orderHash,
+            orderIpfsHash,
+            assignedLabTech,
         ])
 
         const { unsignedTx, nonce, chainId } = await buildUnsignedTx(
@@ -286,7 +293,7 @@ export const prepareAddRecordTx = async (doctorAddress, patientAddress, recordTy
             nonce,
             chainId,
             contractAddress: ehrManager.target,
-            functionSignature: 'addRecord(address,uint8,uint8,bytes32)',
+            functionSignature: 'addRecord(address,uint8,uint8,bytes32,string,address)',
         }
     } catch (err) {
         if (err instanceof ApiError) throw err
@@ -297,10 +304,10 @@ export const prepareAddRecordTx = async (doctorAddress, patientAddress, recordTy
 /**
  * prepareInterpretationTx
  * Bác sĩ thêm diễn giải lâm sàng.
- * Contract V4: addClinicalInterpretation(recordId, interpretationHash)
- * [Fix #4] Bỏ interpretationIpfsHash — contract V4 không còn tham số này.
+ * Contract: addClinicalInterpretation(recordId, interpretationHash, interpretationIpfsHash)
  */
-export const prepareInterpretationTx = async (doctorAddress, recordId, interpretationHash) => {
+export const prepareInterpretationTx = async (doctorAddress, recordId, interpretationHash, interpretationIpfsHash) => {
+
     try {
         if (!ethers.isAddress(doctorAddress)) {
             throw new ApiError(StatusCodes.BAD_REQUEST, 'Địa chỉ bác sĩ không hợp lệ')
@@ -308,16 +315,20 @@ export const prepareInterpretationTx = async (doctorAddress, recordId, interpret
         if (!interpretationHash) {
             throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu interpretationHash')
         }
+        if (!interpretationIpfsHash) {
+            throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu interpretationIpfsHash')
+        }
 
         const ehrManager = blockchainContracts.read.ehrManager
         if (!ehrManager) {
             throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'EHRManager contract chưa khởi tạo')
         }
 
-        // Contract V4: addClinicalInterpretation(uint256 recordId, bytes32 interpretationHash)
+        // Contract: addClinicalInterpretation(uint256,bytes32,string)
         const encodedData = ehrManager.interface.encodeFunctionData('addClinicalInterpretation', [
             BigInt(recordId),
             interpretationHash,
+            interpretationIpfsHash,
         ])
 
         const { unsignedTx, nonce, chainId } = await buildUnsignedTx(
@@ -333,7 +344,7 @@ export const prepareInterpretationTx = async (doctorAddress, recordId, interpret
             nonce,
             chainId,
             contractAddress: ehrManager.target,
-            functionSignature: 'addClinicalInterpretation(uint256,bytes32)',
+            functionSignature: 'addClinicalInterpretation(uint256,bytes32,string)',
         }
     } catch (err) {
         if (err instanceof ApiError) throw err
@@ -345,7 +356,6 @@ export const prepareInterpretationTx = async (doctorAddress, recordId, interpret
  * prepareCompleteTx
  * Bác sĩ chốt hồ sơ.
  * Contract: updateRecordStatus(recordId, 5) — COMPLETE = 5
- * [Fix #2] Đổi từ 8 → 5 (khớp enum RecordStatus trong EHRManager.sol)
  */
 export const prepareCompleteTx = async (doctorAddress, recordId) => {
     try {
@@ -360,7 +370,7 @@ export const prepareCompleteTx = async (doctorAddress, recordId) => {
 
         const encodedData = ehrManager.interface.encodeFunctionData('updateRecordStatus', [
             BigInt(recordId),
-            5, // COMPLETE = 5 (ORDERED=0, CONSENTED=1, IN_PROGRESS=2, RESULT_POSTED=3, DOCTOR_REVIEWED=4, COMPLETE=5)
+            5,
         ])
 
         const { unsignedTx, nonce, chainId } = await buildUnsignedTx(
@@ -385,10 +395,6 @@ export const prepareCompleteTx = async (doctorAddress, recordId) => {
     }
 }
 
-// ============================================================================
-// LAB TECH OPERATIONS
-// ============================================================================
-
 /**
  * prepareReceiveOrderTx
  * Lab tech tiếp nhận order.
@@ -407,7 +413,7 @@ export const prepareReceiveOrderTx = async (labTechAddress, recordId) => {
 
         const encodedData = ehrManager.interface.encodeFunctionData('updateRecordStatus', [
             BigInt(recordId),
-            2, // IN_PROGRESS
+            2,
         ])
 
         const { unsignedTx, nonce, chainId } = await buildUnsignedTx(
@@ -435,14 +441,14 @@ export const prepareReceiveOrderTx = async (labTechAddress, recordId) => {
 /**
  * preparePostResultTx
  * Lab tech post kết quả xét nghiệm.
- * Contract V4: postLabResult(recordId, labResultHash)
- * [Fix #3] Bỏ labResultIpfsHash — contract V4 không còn tham số này.
+ * Contract: postLabResult(recordId, labResultHash, labResultIpfsHash)
  */
-export const preparePostResultTx = async (labTechAddress, recordId, labResultHash) => {
+export const preparePostResultTx = async (labTechAddress, recordId, labResultHash, labResultIpfsHash = '') => {
     try {
         if (!ethers.isAddress(labTechAddress)) {
             throw new ApiError(StatusCodes.BAD_REQUEST, 'Địa chỉ lab tech không hợp lệ')
         }
+
         if (!labResultHash) {
             throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu labResultHash')
         }
@@ -452,10 +458,11 @@ export const preparePostResultTx = async (labTechAddress, recordId, labResultHas
             throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'EHRManager contract chưa khởi tạo')
         }
 
-        // Contract V4: postLabResult(uint256 recordId, bytes32 labResultHash)
+        // Contract: postLabResult(uint256,bytes32,string)
         const encodedData = ehrManager.interface.encodeFunctionData('postLabResult', [
             BigInt(recordId),
             labResultHash,
+            labResultIpfsHash,
         ])
 
         const { unsignedTx, nonce, chainId } = await buildUnsignedTx(
@@ -471,7 +478,7 @@ export const preparePostResultTx = async (labTechAddress, recordId, labResultHas
             nonce,
             chainId,
             contractAddress: ehrManager.target,
-            functionSignature: 'postLabResult(uint256,bytes32)',
+            functionSignature: 'postLabResult(uint256,bytes32,string)',
         }
     } catch (err) {
         if (err instanceof ApiError) throw err

@@ -641,6 +641,6 @@ Router
     *       500:
     *         description: "Server error"
     */
-   .post('/medical-records/:medicalRecordId/complete', medicalRecordController.directCompleteRecord);
+   .post('/medical-records/:medicalRecordId/complete', checkAccessGrant, medicalRecordController.directCompleteRecord);
 
 export const doctorRoute = Router;

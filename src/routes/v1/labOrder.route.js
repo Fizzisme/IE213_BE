@@ -764,7 +764,7 @@ Router.get('/', verifyToken, labOrderController.getLabOrders);
  *       409:
  *         description: Không thể xóa (status != ORDERED)
  */
-Router.delete('/:labOrderId', verifyToken, labOrderController.deleteLabOrder);
+Router.delete('/:labOrderId', verifyToken, authorizeRoles('DOCTOR'), labOrderController.deleteLabOrder);
 
 /**
  * @swagger
@@ -833,7 +833,7 @@ Router.delete('/:labOrderId', verifyToken, labOrderController.deleteLabOrder);
  *       409:
  *         description: Không thể hủy (status = COMPLETE hoặc CANCELLED)
  */
-Router.patch('/:labOrderId/cancel', verifyToken, labOrderController.cancelLabOrder);
+Router.patch('/:labOrderId/cancel', verifyToken, authorizeRoles('DOCTOR'), labOrderController.cancelLabOrder);
 
 /**
  * @swagger

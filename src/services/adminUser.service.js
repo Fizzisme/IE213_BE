@@ -3,6 +3,7 @@ import { auditLogModel } from '~/models/auditLog.model';
 import { StatusCodes } from 'http-status-codes';
 import { patientModel } from '~/models/patient.model';
 import { doctorModel } from '~/models/doctor.model';
+import { labTechModel } from '~/models/labTech.model';
 import ApiError from '~/utils/ApiError';
 // lấy ra toàn bộ user tồn tại 
 const getUsers = async ({ status, page, limit, deleted }) => {
@@ -129,6 +130,14 @@ const softDeleteUser = async ({ targetUserId, adminId }) => {
         }
         case userModel.USER_ROLES.DOCTOR: {
             await doctorModel.softDeleteByUserId(targetUserId);
+            break;
+        }
+        case userModel.USER_ROLES.LAB_TECH: {
+            await labTechModel.LabTechModel.findOneAndUpdate(
+                { userId: targetUserId, _destroy: false },
+                { _destroy: true },
+                { new: true }
+            );
             break;
         }
     }

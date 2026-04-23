@@ -14,6 +14,15 @@ import metaMaskTxBuilder, { verifyTransactionOnBlockchain } from '~/utils/metaMa
 
 const toHexChainId = (chainId) => `0x${Number(chainId).toString(16)}`;
 
+const getUserEmail = (user) => user?.authProviders?.find((p) => p?.email)?.email || null;
+const getUserDisplayName = (user) => user?.fullName || getUserEmail(user) || user?._id?.toString() || 'UNKNOWN';
+
+const verifyRole = async (currentUser, expectedRole) => {
+    if (!currentUser || currentUser.role !== expectedRole) {
+        throw new ApiError(StatusCodes.FORBIDDEN, `Chỉ ${expectedRole} mới được phép thực hiện thao tác này`);
+    }
+};
+
 const buildPrepareResponse = (action, preparedTx, details = {}) => {
     const { unsignedTx, chainId, functionSignature } = preparedTx;
 
@@ -327,11 +336,13 @@ const createLabOrder = async (data, currentUser) => {
             `User ${assignedLabTech} không phải lab tech (role=${labTech.role})`
         );
     }
+    const labTechDisplayName = getUserDisplayName(labTech);
+
     // Nếu lab_tech ko active thì báo lỗi 
     if (labTech.status !== 'ACTIVE') {
         throw new ApiError(
             StatusCodes.BAD_REQUEST,
-            `Lab tech ${labTech.name} không hoạt động (status=${labTech.status})`
+            `Lab tech ${labTechDisplayName} không hoạt động (status=${labTech.status})`
         );
     }
     // Lấy wallet address của lab tech
@@ -340,12 +351,10 @@ const createLabOrder = async (data, currentUser) => {
         {
             throw new ApiError(
                 StatusCodes.BAD_REQUEST,
-                `Lab tech ${labTech.name} chưa liên kết ví blockchain`
+                `Lab tech ${labTechDisplayName} chưa liên kết ví blockchain`
             );
         }
-
-
-    console.log(`[Lab Order] Lab tech xác thực: ${labTech.name} (${assignedLabTech})`);
+    console.log(`[Lab Order] Lab tech xác thực: ${labTechDisplayName} (${assignedLabTech})`);
 
     const normalizedDoctorWalletForTx = normalizeWalletAddress(currentUser.walletAddress);
 
@@ -399,6 +408,7 @@ const createLabOrder = async (data, currentUser) => {
             recordTypeNum,
             requiredLevel,
             orderHash,
+            '',
             labTechWalletAddress,
         );
 
@@ -423,6 +433,7 @@ const createLabOrder = async (data, currentUser) => {
             const argRecordType = Number(args?.[1]);
             const argRequiredLevel = Number(args?.[2]);
             const argOrderHash = args?.[3];
+            const argOrderIpfsHash = args?.[4];
             const argLabTech = args?.[5]?.toLowerCase(); 
 
 
@@ -431,6 +442,7 @@ const createLabOrder = async (data, currentUser) => {
                 && argRecordType === recordTypeNum
                 && argRequiredLevel === requiredLevel
                 && argOrderHash?.toLowerCase() === orderHash.toLowerCase()
+                && (argOrderIpfsHash || '') === ''
                 && argLabTech === labTechWalletAddress.toLowerCase()
             );
         },
@@ -569,8 +581,11 @@ const getLabOrderDetail = async (labOrderId, currentUser) => {
     const isCreator = labOrder.createdBy?.toLowerCase() === walletAddress.toLowerCase();
     const user = await userModel.findById(currentUser._id);
     const isAdmin = user?.role === 'ADMIN';
+    const isAssignedLabTech = user?.role === 'LAB_TECH'
+        && !!labOrder.assignedLabTech
+        && labOrder.assignedLabTech.toString() === currentUser._id?.toString();
 
-    if (!isOwner && !isCreator && !isAdmin) {
+    if (!isOwner && !isCreator && !isAdmin && !isAssignedLabTech) {
         throw new ApiError(StatusCodes.FORBIDDEN, 'Bạn không có quyền xem lab order này');
     }
 
@@ -616,8 +631,8 @@ const getLabOrders = async (currentUser, query) => {
         if (status) {
             filter.sampleStatus = status;
         } else {
-            // Mặc định filter: IN_PROGRESS hoặc RESULT_POSTED (orders đang làm)
-            filter.sampleStatus = { $in: ['IN_PROGRESS', 'RESULT_POSTED'] };
+            // Mặc định filter: CONSENTED + IN_PROGRESS + RESULT_POSTED (orders cần xử lý)
+            filter.sampleStatus = { $in: ['CONSENTED', 'IN_PROGRESS', 'RESULT_POSTED'] };
         }
 
         console.log(`[getLabOrders] LAB_TECH filter:`, filter);
@@ -674,8 +689,11 @@ const getLabOrders = async (currentUser, query) => {
  * Delete lab order + cleanup medical record linking
  * Xóa chỉ định xét nghiệm và tự động remove khỏi medical record
  */
-const deleteLabOrder = async (labOrderId) => {
+const deleteLabOrder = async (labOrderId, currentUser) => {
     try {
+        await verifyRole(currentUser, 'DOCTOR');
+        const currentDoctorWallet = normalizeWalletAddress(await getWalletAddress(currentUser));
+
         // 1️. Lấy lab order trước khi xóa (để biết relatedMedicalRecordId)
         const labOrder = await labOrderModel.LabOrderModel.findById(labOrderId);
 
@@ -684,6 +702,10 @@ const deleteLabOrder = async (labOrderId) => {
                 StatusCodes.NOT_FOUND,
                 `Lab order với ID ${labOrderId} không tồn tại`
             );
+        }
+
+        if (labOrder.createdBy?.toLowerCase() !== currentDoctorWallet.toLowerCase()) {
+            throw new ApiError(StatusCodes.FORBIDDEN, 'Chỉ bác sĩ tạo order mới được xóa order này');
         }
 
         // 2️. Không cho phép xóa nếu đã tiến hành test (status >= CONSENTED)
@@ -713,17 +735,18 @@ const deleteLabOrder = async (labOrderId) => {
 
         // 5️. Log audit event
         try {
-            await auditLogModel.AuditLogModel.create({
+            await auditLogModel.createLog({
+                userId: currentUser._id,
+                walletAddress: currentDoctorWallet,
+                action: 'DELETE_LAB_ORDER',
                 entityType: 'LAB_ORDER',
                 entityId: labOrderId,
-                action: 'DELETE',
                 status: 'SUCCESS',
                 details: {
                     orderId: labOrderId,
                     relatedMedicalRecordId: labOrder.relatedMedicalRecordId,
                     previousStatus: labOrder.sampleStatus,
                 },
-                timestamp: new Date(),
             });
         } catch (auditErr) {
             console.warn(`Lỗi ghi audit log:`, auditErr.message);
@@ -745,8 +768,11 @@ const deleteLabOrder = async (labOrderId) => {
  * Cancel lab order (nhưng giữ lại record)
  * Thay đổi status thành CANCELLED, không xóa data
  */
-const cancelLabOrder = async (labOrderId, reason = 'Hủy yêu cầu') => {
+const cancelLabOrder = async (labOrderId, currentUser, reason = 'Hủy yêu cầu') => {
     try {
+        await verifyRole(currentUser, 'DOCTOR');
+        const currentDoctorWallet = normalizeWalletAddress(await getWalletAddress(currentUser));
+
         // 1️⃣ Lấy lab order
         const labOrder = await labOrderModel.LabOrderModel.findById(labOrderId);
 
@@ -755,6 +781,10 @@ const cancelLabOrder = async (labOrderId, reason = 'Hủy yêu cầu') => {
                 StatusCodes.NOT_FOUND,
                 `Lab order với ID ${labOrderId} không tồn tại`
             );
+        }
+
+        if (labOrder.createdBy?.toLowerCase() !== currentDoctorWallet.toLowerCase()) {
+            throw new ApiError(StatusCodes.FORBIDDEN, 'Chỉ bác sĩ tạo order mới được hủy order này');
         }
 
         // 2️⃣ Không cho phép cancel nếu đã xong
@@ -783,7 +813,7 @@ const cancelLabOrder = async (labOrderId, reason = 'Hủy yêu cầu') => {
                     auditLogs: {
                         from: previousStatus,
                         to: 'CANCELLED',
-                        by: 'SYSTEM',  // Hoặc truyền vào user info
+                        by: currentDoctorWallet,
                         at: new Date(),
                         reason,
                     },
@@ -799,10 +829,12 @@ const cancelLabOrder = async (labOrderId, reason = 'Hủy yêu cầu') => {
 
         // 5️Log audit event
         try {
-            await auditLogModel.AuditLogModel.create({
+            await auditLogModel.createLog({
+                userId: currentUser._id,
+                walletAddress: currentDoctorWallet,
                 entityType: 'LAB_ORDER',
                 entityId: labOrderId,
-                action: 'CANCEL',
+                action: 'CANCEL_LAB_ORDER',
                 status: 'SUCCESS',
                 details: {
                     orderId: labOrderId,
@@ -810,7 +842,6 @@ const cancelLabOrder = async (labOrderId, reason = 'Hủy yêu cầu') => {
                     newStatus: 'CANCELLED',
                     reason,
                 },
-                timestamp: new Date(),
             });
         } catch (auditErr) {
             console.warn(`Lỗi ghi audit log:`, auditErr.message);
@@ -868,13 +899,40 @@ const assignLabOrderToTech = async (currentUser, labOrderId, labTechId) => {
         throw new ApiError(StatusCodes.BAD_REQUEST, `User ${labTechId} không phải lab tech`);
     }
 
+    const labTechDisplayName = getUserDisplayName(labTech);
+    const labTechEmail = getUserEmail(labTech);
+
     if (labTech.status !== 'ACTIVE') {
-        throw new ApiError(StatusCodes.BAD_REQUEST, `Lab tech ${labTech.name} không hoạt động`);
+        throw new ApiError(StatusCodes.BAD_REQUEST, `Lab tech ${labTechDisplayName} không hoạt động`);
     }
 
-    // Assign order cho lab tech
-    labOrder.assignedLabTech = labTechId;
-    await labOrder.save();
+    const updatedOrder = await labOrderModel.LabOrderModel.findOneAndUpdate(
+        {
+            _id: labOrderId,
+            sampleStatus: 'CONSENTED',
+            createdBy: normalizedDoctorWallet,
+        },
+        {
+            $set: { assignedLabTech: labTechId },
+            $push: {
+                auditLogs: {
+                    from: 'CONSENTED',
+                    to: 'CONSENTED',
+                    by: normalizedDoctorWallet,
+                    at: new Date(),
+                    note: `Assigned lab tech ${labTechDisplayName}`,
+                },
+            },
+        },
+        { new: true }
+    );
+
+    if (!updatedOrder) {
+        throw new ApiError(
+            StatusCodes.CONFLICT,
+            'Không thể assign vì order đã thay đổi trạng thái hoặc không còn thuộc bác sĩ hiện tại'
+        );
+    }
 
     // Ghi audit log
     await auditLogModel.createLog({
@@ -882,24 +940,24 @@ const assignLabOrderToTech = async (currentUser, labOrderId, labTechId) => {
         walletAddress: normalizedDoctorWallet,
         action: 'ASSIGN_LAB_ORDER',
         entityType: 'LAB_ORDER',
-        entityId: labOrder._id,
+        entityId: updatedOrder._id,
         status: 'SUCCESS',
         details: {
-            note: `Doctor assigned order ${labOrderId} to lab tech ${labTech.name}`,
+            note: `Doctor assigned order ${labOrderId} to lab tech ${labTechDisplayName}`,
             assignedLabTechId: labTechId,
-            assignedLabTechName: labTech.name,
+            assignedLabTechName: labTechDisplayName,
         },
     });
 
     return {
         message: 'Phân công order thành công',
-        orderId: labOrder._id.toString(),
+        orderId: updatedOrder._id.toString(),
         assignedLabTech: {
             id: labTech._id.toString(),
-            name: labTech.name,
-            email: labTech.email,
+            name: labTechDisplayName,
+            email: labTechEmail,
         },
-        sampleStatus: labOrder.sampleStatus,
+        sampleStatus: updatedOrder.sampleStatus,
         updatedAt: new Date(),
     };
 };

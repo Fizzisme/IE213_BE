@@ -183,6 +183,28 @@ const verifyTxFunctionCall = async ({ txHash, contract, functionName, argsValida
     }
 };
 
+const buildDeterministicHash = (payload) => {
+    const sortedKeys = Object.keys(payload).sort();
+    const payloadString = JSON.stringify(payload, sortedKeys);
+    return ethers.keccak256(ethers.toUtf8Bytes(payloadString));
+};
+
+const getMedicalRecordPatientWallet = async (medicalRecord) => {
+    if (medicalRecord?.patientWalletAddress) {
+        return normalizeWalletAddress(medicalRecord.patientWalletAddress);
+    }
+
+    if (!medicalRecord?.patientId) return null;
+
+    const { patientModel } = await import('~/models/patient.model');
+    const patient = await patientModel.findById(medicalRecord.patientId);
+    if (!patient?.userId) return null;
+
+    const patientUser = await userModel.findById(patient.userId);
+    const walletAddress = patientUser?.authProviders?.find((p) => p?.walletAddress)?.walletAddress;
+    return walletAddress ? normalizeWalletAddress(walletAddress) : null;
+};
+
 // ============================================================================
 // HELPER: Tạo TestResult với retry logic (Issue B - High Priority)
 // ============================================================================
@@ -495,7 +517,12 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
     // [Sửa #2] Xác thực status = ACTIVE
     await verifyRole(currentUser, 'LAB_TECH');
 
-    const { rawData, note, txHash: confirmedTxHash } = resultData;
+    const {
+        rawData,
+        note,
+        labResultIpfsHash = '',
+        txHash: confirmedTxHash,
+    } = resultData;
 
     const labOrder = await labOrderModel.LabOrderModel.findById(labOrderId);
     if (!labOrder) {
@@ -533,8 +560,6 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
     // SNAPSHOT: Chụp lại ví lab tech tại thời điểm gửi (vęt kiểm toàn bổ không thay đổi)
     // GHI CHÚC: txHash (on-chain msg.sender) là nguồn sự thật
     //      Snapshot là cho các truy vấn off-chain & indexắp audit log
-    const labTechWalletSnapshot = normalizedLabTechWallet;
-
     // 1. Prepare result metadata for storage
     const labResultMetadata = {
         rawData,
@@ -555,11 +580,17 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
     let txHash = confirmedTxHash;
     let syncBlockNumber = null;
     if (!txHash) {
-        const preparedTx = await metaMaskTxBuilder.preparePostResultTx(normalizedLabTechWallet, recordId, labResultHash);
+        const preparedTx = await metaMaskTxBuilder.preparePostResultTx(
+            normalizedLabTechWallet,
+            recordId,
+            labResultHash,
+            labResultIpfsHash,
+        );
         return buildPrepareResponse('POST_LAB_RESULT', preparedTx, {
             labOrderId,
             recordId,
             labResultHash,
+            labResultIpfsHash,
             fromStatus: 'IN_PROGRESS',
             toStatus: 'RESULT_POSTED',
         });
@@ -573,7 +604,10 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
             txHash,
             contract: blockchainContracts.read.ehrManager,
             functionName: 'postLabResult',
-            argsValidator: (args) => Number(args?.[0]) === Number(recordId) && args?.[1]?.toLowerCase() === labResultHash.toLowerCase(),
+            argsValidator: (args) =>
+                Number(args?.[0]) === Number(recordId)
+                && args?.[1]?.toLowerCase() === labResultHash.toLowerCase()
+                && (args?.[2] || '') === labResultIpfsHash,
         });
     } catch (blockchainError) {
         throw new ApiError(StatusCodes.BAD_REQUEST, `Gọi blockchain postLabResult thất bại: ${blockchainError.message}`);
@@ -676,6 +710,7 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
     let testResultStatus = TEST_RESULT_STATUS.FAILED;  // Assume fail, fill success nếu ok
     let testResultRetryCount = 0;
     let testResultError = null;
+    let finalTestResultId = null;
 
     try {
         console.log(`[Lab Result] Bước: Tạo kết quả xét nghiệm để phân tích AI...`);
@@ -740,6 +775,7 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
         if (retryResult.success) {
             testResultStatus = TEST_RESULT_STATUS.SUCCESS;
             testResultRetryCount = retryResult.attempt - 1;
+            finalTestResultId = retryResult.testResult?._id?.toString() || null;
 
             // FIX #4: Save testResultId riêng bằng $set, không đụng các field khác
             await labOrderModel.LabOrderModel.findByIdAndUpdate(updatedOrder._id, {
@@ -754,6 +790,7 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
             testResultStatus = TEST_RESULT_STATUS.FAILED;
             testResultRetryCount = retryResult.attempt;
             testResultError = retryResult.error;
+            finalTestResultId = null;
 
             await labOrderModel.LabOrderModel.findByIdAndUpdate(updatedOrder._id, {
                 $set: {
@@ -811,7 +848,7 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
         labResultHash,
         updatedAt: now,
         // [Issue B] New fields - TestResult status tracking
-        testResultId: labOrder.testResultId?.toString() || null,
+        testResultId: finalTestResultId,
         testResultStatus: testResultStatus,          // SUCCESS / FAILED
         testResultRetryCount: testResultRetryCount,  // Số lần đã retry
         testResultError: testResultError,            // Error message nếu fail (null nếu success)
@@ -980,17 +1017,26 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
     await verifyPatientAccessHelper(normalizedPatientAddr, normalizedDoctorAddr, requiredLevelForCheck);
 
     // Step 6: Calculate interpretation hash
-    const interpretationHash = ethers.keccak256(
-        ethers.toUtf8Bytes(interpretation + (recommendation || ''))
-    );
+    const interpretationHash = buildDeterministicHash({
+        interpretation,
+        recommendation: recommendation || '',
+        confirmedDiagnosis,
+    });
+    const interpretationIpfsHash = interpretationData?.interpretationIpfsHash || 'mongo://clinical-interpretation';
     console.log(`[Clinical Interpretation] Step 6: Calculated interpretationHash: ${interpretationHash}`);
 
     if (!confirmedTxHash) {
-        const preparedTx = await metaMaskTxBuilder.prepareInterpretationTx(normalizedDoctorAddr, recordId, interpretationHash);
+        const preparedTx = await metaMaskTxBuilder.prepareInterpretationTx(
+            normalizedDoctorAddr,
+            recordId,
+            interpretationHash,
+            interpretationIpfsHash,
+        );
         return buildPrepareResponse('ADD_CLINICAL_INTERPRETATION', preparedTx, {
             labOrderId,
             recordId,
             interpretationHash,
+            interpretationIpfsHash,
             confirmedDiagnosis,
             fromStatus: 'RESULT_POSTED',
             toStatus: 'DOCTOR_REVIEWED',
@@ -1008,7 +1054,10 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
         txHash: confirmedTxHash,
         contract: blockchainContracts.read.ehrManager,
         functionName: 'addClinicalInterpretation',
-        argsValidator: (args) => Number(args?.[0]) === Number(recordId) && args?.[1]?.toLowerCase() === interpretationHash.toLowerCase(),
+        argsValidator: (args) =>
+            Number(args?.[0]) === Number(recordId)
+            && args?.[1]?.toLowerCase() === interpretationHash.toLowerCase()
+            && (args?.[2] || '') === interpretationIpfsHash,
     });
 
     // Step 8: Update MongoDB
@@ -1334,6 +1383,22 @@ const directCompleteRecord = async (currentUser, medicalRecordId) => {
 
     // [Sửa #3] Chuẩn hóa địa chỉ ví bác sĩ
     const normalizedDoctorWallet = normalizeWalletAddress(currentUser.walletAddress);
+    const patientWallet = await getMedicalRecordPatientWallet(medicalRecord);
+    if (!patientWallet) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Không thể xác định ví bệnh nhân cho hồ sơ này');
+    }
+
+    const hasAccess = await blockchainContracts.read.accessControl.checkAccessLevel(
+        patientWallet,
+        normalizedDoctorWallet,
+        2,
+    );
+    if (!hasAccess) {
+        throw new ApiError(
+            StatusCodes.FORBIDDEN,
+            'Bác sĩ không có quyền FULL để hoàn thành trực tiếp hồ sơ bệnh án này'
+        );
+    }
 
     // 4. Cập nhật trạng thái → COMPLETE
     // [Sửa tập trung] Sử dụng medicalRecordService.updateStatus() để đảm bảo xác thực nhất quán

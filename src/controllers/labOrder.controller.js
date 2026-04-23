@@ -206,7 +206,7 @@ const getLabOrders = async (req, res, next) => {
  * @swagger
  * /v1/lab-orders/{labOrderId}:
  *   delete:
- *     summary: ❌ Xóa lab order (chỉ được phép nếu status = ORDERED)
+ *     summary: Xóa lab order (chỉ được phép nếu status = ORDERED)
  *     tags: [LabOrder]
  *     security:
  *       - bearerAuth: []
@@ -252,7 +252,7 @@ const getLabOrders = async (req, res, next) => {
 const deleteLabOrder = async (req, res, next) => {
     try {
         const { labOrderId } = req.params;
-        const result = await labOrderService.deleteLabOrder(labOrderId);
+        const result = await labOrderService.deleteLabOrder(labOrderId, req.user);
         res.status(StatusCodes.OK).json(result);
     } catch (e) {
         next(e);
@@ -327,7 +327,7 @@ const cancelLabOrder = async (req, res, next) => {
     try {
         const { labOrderId } = req.params;
         const { reason } = req.body;
-        const result = await labOrderService.cancelLabOrder(labOrderId, reason);
+        const result = await labOrderService.cancelLabOrder(labOrderId, req.user, reason);
         res.status(StatusCodes.OK).json(result);
     } catch (e) {
         next(e);
