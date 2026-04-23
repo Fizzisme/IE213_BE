@@ -8,7 +8,6 @@ const detailSchema = new Schema(
     {
         ip: { type: String, default: null },
         device: { type: String, default: null },
-        recordId: { type: Schema.Types.ObjectId, default: null },
         note: { type: String, default: null },
     },
     { _id: false },
@@ -31,23 +30,46 @@ const auditLogSchema = new Schema(
         action: {
             type: String,
             enum: [
-                'LOGIN_PHONE',
+                'LOGIN_LOCAL',
                 'LOGIN_WALLET',
-                'CREATE_HIV_TEST',
-                'SUBMIT_HIV_TEST',
                 'ADMIN_OVERRIDE',
-                'REGISTER_PATIENT',
+                'REGISTER_USER',
+                'CREATE_PATIENT',
+                'CREATE_MEDICAL_RECORD',
+                'CREATE_TEST_RESULT',
+                // EHR Workflow actions
+                'CREATE_LAB_ORDER',
+                'CONSENT_LAB_ORDER',
+                'RECEIVE_LAB_ORDER',
+                'POST_LAB_RESULT',
+                'ADD_CLINICAL_INTERPRETATION',
+                'COMPLETE_RECORD',
+                // Access Control actions
+                'GRANT_ACCESS',
+                'UPDATE_ACCESS',
+                'REVOKE_ACCESS',
+                // Blockchain sync actions
+                'SYNC_BLOCKCHAIN_EVENT_FAILED',
             ],
             required: true,
         },
 
         entityType: {
             type: String,
-            enum: ['HIV_TEST', 'MEDICAL_RECORD', 'AUDIT_LOG', 'PATIENT', 'USER'],
+            enum: ['MEDICAL_RECORD', 'AUDIT_LOG', 'PATIENT', 'USER', 'TEST_RESULT', 'ACCESS_CONTROL', 'LAB_ORDER'],
             default: null,
         },
         entityId: {
             type: Schema.Types.ObjectId,
+            default: null,
+        },
+
+        oldData: {
+            type: Schema.Types.Mixed,
+            default: null,
+        },
+        newData: {
+            type: Schema.Types.Mixed,
             default: null,
         },
 
@@ -89,8 +111,6 @@ const auditLogSchema = new Schema(
 auditLogSchema.index({ userId: 1, createdAt: -1 });
 
 auditLogSchema.index({ entityType: 1, entityId: 1 });
-
-auditLogSchema.index({ txHash: 1 });
 
 const AuditLogModel = mongoose.model(COLLECTION_NAME, auditLogSchema);
 

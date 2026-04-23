@@ -1,4 +1,4 @@
-// models/doctorModel.js
+// models/doctor.model.js
 import mongoose from 'mongoose';
 
 const COLLECTION_NAME = 'doctors';
@@ -7,15 +7,10 @@ const doctorSchema = new mongoose.Schema(
     {
         userId: {
             type: mongoose.Schema.Types.ObjectId,
+            ref: 'users',
             required: true,
             unique: true,
             index: true,
-        },
-
-        fullName: {
-            type: String,
-            required: true,
-            trim: true,
         },
 
         specialization: {
@@ -29,16 +24,6 @@ const doctorSchema = new mongoose.Schema(
         },
 
         licenseNumber: {
-            type: String,
-            default: null,
-        },
-
-        phoneEncrypted: {
-            type: String,
-            default: null,
-        },
-
-        email: {
             type: String,
             default: null,
         },
@@ -62,6 +47,18 @@ const doctorSchema = new mongoose.Schema(
 );
 
 doctorSchema.index({ specialization: 1 });
-doctorSchema.index({ status: 1 });
 
-export const DoctorModel = mongoose.model(COLLECTION_NAME, doctorSchema);
+const DoctorModel = mongoose.model(COLLECTION_NAME, doctorSchema);
+
+const softDeleteByUserId = async (userId) => {
+    return await DoctorModel.findOneAndUpdate(
+        { userId, deletedAt: null },
+        { deletedAt: new Date(), status: 'SUSPENDED' },
+        { new: true },
+    );
+};
+
+export const doctorModel = {
+    DoctorModel,
+    softDeleteByUserId,
+};

@@ -1,0 +1,383 @@
+[
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "accountManagerAddress",
+				"type": "address"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "constructor"
+	},
+	{
+		"inputs": [],
+		"name": "AccessNotFound",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "AlreadyHasAccess",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InvalidAccessLevel",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InvalidAddress",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "NotAPatient",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "RateLimitExceeded",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "TargetMustBeDoctorOrLabTech",
+		"type": "error"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "patient",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "accessor",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "enum AccessControl.AccessLevel",
+				"name": "requiredLevel",
+				"type": "uint8"
+			},
+			{
+				"indexed": false,
+				"internalType": "bool",
+				"name": "allowed",
+				"type": "bool"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
+			}
+		],
+		"name": "AccessChecked",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "patient",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "accessor",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "enum AccessControl.AccessLevel",
+				"name": "level",
+				"type": "uint8"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint64",
+				"name": "expiresAt",
+				"type": "uint64"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
+			}
+		],
+		"name": "AccessGranted",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "patient",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "accessor",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
+			}
+		],
+		"name": "AccessRevoked",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "patient",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "accessor",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "enum AccessControl.AccessLevel",
+				"name": "level",
+				"type": "uint8"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint64",
+				"name": "expiresAt",
+				"type": "uint64"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
+			}
+		],
+		"name": "AccessUpdated",
+		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "patient",
+				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "accessor",
+				"type": "address"
+			},
+			{
+				"internalType": "enum AccessControl.AccessLevel",
+				"name": "requiredLevel",
+				"type": "uint8"
+			}
+		],
+		"name": "checkAccessLevel",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "patient",
+				"type": "address"
+			},
+			{
+				"internalType": "enum AccessControl.AccessLevel",
+				"name": "requiredLevel",
+				"type": "uint8"
+			}
+		],
+		"name": "checkMyAccessAndLog",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "patient",
+				"type": "address"
+			},
+			{
+				"internalType": "enum AccessControl.AccessLevel",
+				"name": "requiredLevel",
+				"type": "uint8"
+			}
+		],
+		"name": "checkMyAccessLevel",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "patient",
+				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "accessor",
+				"type": "address"
+			}
+		],
+		"name": "getAccessGrant",
+		"outputs": [
+			{
+				"internalType": "enum AccessControl.AccessLevel",
+				"name": "level",
+				"type": "uint8"
+			},
+			{
+				"internalType": "uint64",
+				"name": "grantedAt",
+				"type": "uint64"
+			},
+			{
+				"internalType": "uint64",
+				"name": "expiresAt",
+				"type": "uint64"
+			},
+			{
+				"internalType": "bool",
+				"name": "isActive",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "accessor",
+				"type": "address"
+			},
+			{
+				"internalType": "enum AccessControl.AccessLevel",
+				"name": "level",
+				"type": "uint8"
+			},
+			{
+				"internalType": "uint64",
+				"name": "durationHours",
+				"type": "uint64"
+			}
+		],
+		"name": "grantAccess",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "patient",
+				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "accessor",
+				"type": "address"
+			}
+		],
+		"name": "isGrantValid",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "accessor",
+				"type": "address"
+			}
+		],
+		"name": "revokeAccess",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "accessor",
+				"type": "address"
+			},
+			{
+				"internalType": "enum AccessControl.AccessLevel",
+				"name": "level",
+				"type": "uint8"
+			},
+			{
+				"internalType": "uint64",
+				"name": "durationHours",
+				"type": "uint64"
+			}
+		],
+		"name": "updateAccess",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	}
+]

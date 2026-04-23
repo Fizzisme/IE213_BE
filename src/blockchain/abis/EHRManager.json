@@ -1,0 +1,487 @@
+[
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "accountManagerAddress",
+				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "accessControlAddress",
+				"type": "address"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "constructor"
+	},
+	{
+		"inputs": [],
+		"name": "AccessDenied",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InvalidAddress",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InvalidHash",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InvalidLevel",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InvalidRole",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "InvalidStatusTransition",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "NotAssignedLabTech",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "NotAuthor",
+		"type": "error"
+	},
+	{
+		"inputs": [],
+		"name": "NotFound",
+		"type": "error"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "uint256",
+				"name": "recordId",
+				"type": "uint256"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "patient",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "author",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "assignedLabTech",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "bytes32",
+				"name": "contentHash",
+				"type": "bytes32"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "ipfsHash",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
+			}
+		],
+		"name": "RecordAdded",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "uint256",
+				"name": "recordId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "enum EHRManager.RecordStatus",
+				"name": "status",
+				"type": "uint8"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
+			}
+		],
+		"name": "RecordStatusUpdated",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "uint256",
+				"name": "recordId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "bytes32",
+				"name": "contentHash",
+				"type": "bytes32"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "ipfsHash",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
+			}
+		],
+		"name": "RecordUpdated",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "accessControl",
+		"outputs": [
+			{
+				"internalType": "contract IAccessControl",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "accountManager",
+		"outputs": [
+			{
+				"internalType": "contract IAccountManagerForEHR",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "recordId",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bytes32",
+				"name": "interpretationHash",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "string",
+				"name": "interpretationIpfsHash",
+				"type": "string"
+			}
+		],
+		"name": "addClinicalInterpretation",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "patient",
+				"type": "address"
+			},
+			{
+				"internalType": "enum EHRManager.RecordType",
+				"name": "recordType",
+				"type": "uint8"
+			},
+			{
+				"internalType": "enum IAccessControl.AccessLevel",
+				"name": "requiredLevel",
+				"type": "uint8"
+			},
+			{
+				"internalType": "bytes32",
+				"name": "orderHash",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "string",
+				"name": "orderIpfsHash",
+				"type": "string"
+			},
+			{
+				"internalType": "address",
+				"name": "assignedLabTech",
+				"type": "address"
+			}
+		],
+		"name": "addRecord",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "patient",
+				"type": "address"
+			}
+		],
+		"name": "getPatientRecordIds",
+		"outputs": [
+			{
+				"internalType": "uint256[]",
+				"name": "",
+				"type": "uint256[]"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "recordId",
+				"type": "uint256"
+			}
+		],
+		"name": "getRecord",
+		"outputs": [
+			{
+				"components": [
+					{
+						"internalType": "uint256",
+						"name": "id",
+						"type": "uint256"
+					},
+					{
+						"internalType": "address",
+						"name": "patient",
+						"type": "address"
+					},
+					{
+						"internalType": "address",
+						"name": "author",
+						"type": "address"
+					},
+					{
+						"internalType": "address",
+						"name": "assignedLabTech",
+						"type": "address"
+					},
+					{
+						"internalType": "enum EHRManager.RecordType",
+						"name": "recordType",
+						"type": "uint8"
+					},
+					{
+						"internalType": "enum EHRManager.RecordStatus",
+						"name": "status",
+						"type": "uint8"
+					},
+					{
+						"internalType": "bytes32",
+						"name": "orderHash",
+						"type": "bytes32"
+					},
+					{
+						"internalType": "string",
+						"name": "orderIpfsHash",
+						"type": "string"
+					},
+					{
+						"internalType": "bytes32",
+						"name": "labResultHash",
+						"type": "bytes32"
+					},
+					{
+						"internalType": "string",
+						"name": "labResultIpfsHash",
+						"type": "string"
+					},
+					{
+						"internalType": "bytes32",
+						"name": "interpretationHash",
+						"type": "bytes32"
+					},
+					{
+						"internalType": "string",
+						"name": "interpretationIpfsHash",
+						"type": "string"
+					},
+					{
+						"internalType": "enum IAccessControl.AccessLevel",
+						"name": "requiredLevel",
+						"type": "uint8"
+					},
+					{
+						"internalType": "uint64",
+						"name": "createdAt",
+						"type": "uint64"
+					},
+					{
+						"internalType": "uint64",
+						"name": "updatedAt",
+						"type": "uint64"
+					},
+					{
+						"internalType": "bool",
+						"name": "active",
+						"type": "bool"
+					}
+				],
+				"internalType": "struct EHRManager.Record",
+				"name": "",
+				"type": "tuple"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "nextRecordId",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "recordId",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bytes32",
+				"name": "labResultHash",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "string",
+				"name": "labResultIpfsHash",
+				"type": "string"
+			}
+		],
+		"name": "postLabResult",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "recordId",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bytes32",
+				"name": "newHash",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "string",
+				"name": "newIpfsHash",
+				"type": "string"
+			}
+		],
+		"name": "updateOrderProof",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "recordId",
+				"type": "uint256"
+			},
+			{
+				"internalType": "enum EHRManager.RecordStatus",
+				"name": "newStatus",
+				"type": "uint8"
+			}
+		],
+		"name": "updateRecordStatus",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "recordId",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bytes32",
+				"name": "computedHash",
+				"type": "bytes32"
+			},
+			{
+				"internalType": "uint8",
+				"name": "hashType",
+				"type": "uint8"
+			}
+		],
+		"name": "verifyRecordHash",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	}
+]
