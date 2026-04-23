@@ -78,8 +78,8 @@ Hệ thống quản lý kết quả xét nghiệm theo mô hình **patient-centr
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
 │  │                     Blockchain Layer (contract.js)                   │    │
 │  │                                                                      │    │
-│  │  ADMIN_PRIVATE_KEY dùng để ký tất cả giao dịch                      │    │
-│  │  (backend ký thay mặt người dùng)                                    │    │
+│  │  Backend chuẩn bị transaction data (unsigned)                        │    │
+│  │  Frontend MetaMask ký + broadcast, backend confirm bằng txHash       │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                              │
 └──────────────────────────────┬───────────────────────────────────────────────┘
@@ -168,8 +168,8 @@ Record {
 **MetaMask dùng cho:**
 
 1. **Đăng nhập**: Ký message (không tốn gas) → chứng minh sở hữu ví
-2. **Xác nhận consent**: Backend ký thay (dùng ADMIN_PRIVATE_KEY)
-3. **Cấp quyền**: Backend ký thay (dùng ADMIN_PRIVATE_KEY)
+2. **Xác nhận consent**: Bệnh nhân ký giao dịch bằng MetaMask
+3. **Cấp quyền**: Bệnh nhân ký giao dịch bằng MetaMask
 
 **Luồng:**
 
@@ -186,11 +186,11 @@ Backend xác minh → cấp JWT token
     ↓
 Bệnh nhân click "Đồng ý xét nghiệm"
     ↓
-Backend gọi updateRecordStatus(CONSENTED)
+Backend trả txRequest (prepare)
     ↓
-Backend ký bằng ADMIN_PRIVATE_KEY
+Patient ký + broadcast trên MetaMask
     ↓
-Giao dịch gửi lên blockchain
+Frontend gửi txHash về backend để confirm
 ```
 
 ### Bác sĩ (DOCTOR)
@@ -198,9 +198,9 @@ Giao dịch gửi lên blockchain
 **MetaMask dùng cho:**
 
 1. **Đăng nhập**: Ký message (không tốn gas)
-2. **Tạo lab order**: Backend ký thay
-3. **Thêm diễn giải**: Backend ký thay
-4. **Chốt hồ sơ**: Backend ký thay
+2. **Tạo lab order**: Bác sĩ ký giao dịch bằng MetaMask
+3. **Thêm diễn giải**: Bác sĩ ký giao dịch bằng MetaMask
+4. **Chốt hồ sơ**: Bác sĩ ký giao dịch bằng MetaMask
 
 **Luồng:**
 
@@ -221,11 +221,11 @@ Backend upload metadata lên IPFS
     ↓
 Backend tính keccak256 hash
     ↓
-Backend gọi addRecord()
+Backend trả txRequest (prepare)
     ↓
-Backend ký bằng ADMIN_PRIVATE_KEY
+Doctor ký + broadcast trên MetaMask
     ↓
-Giao dịch gửi lên blockchain
+Frontend gửi txHash về backend để confirm
 ```
 
 ### Lab Tech
@@ -233,8 +233,8 @@ Giao dịch gửi lên blockchain
 **MetaMask dùng cho:**
 
 1. **Đăng nhập**: Ký message (không tốn gas)
-2. **Tiếp nhận order**: Backend ký thay
-3. **Post kết quả**: Backend ký thay
+2. **Tiếp nhận order**: Lab tech ký giao dịch bằng MetaMask
+3. **Post kết quả**: Lab tech ký giao dịch bằng MetaMask
 
 **Luồng:**
 
@@ -251,16 +251,16 @@ Backend xác minh → cấp JWT token
     ↓
 Lab Tech click "Tiếp nhận order"
     ↓
-Backend gọi updateRecordStatus(IN_PROGRESS)
+Backend trả txRequest (prepare)
     ↓
-Backend ký bằng ADMIN_PRIVATE_KEY
+Lab Tech ký + broadcast trên MetaMask
     ↓
-Giao dịch gửi lên blockchain
+Frontend gửi txHash về backend để confirm
 ```
 
 ### Admin
 
-**KHÔNG dùng MetaMask** - đăng nhập bằng nationId + password
+**Đăng nhập bằng nationId + password; các giao dịch admin on-chain dùng MetaMask prepare/confirm**
 
 **Luồng:**
 
@@ -273,11 +273,11 @@ Backend xác minh → cấp JWT token
     ↓
 Admin click "Duyệt user"
     ↓
-Backend gọi approveAccount()
+Backend trả txRequest (prepare)
     ↓
-Backend ký bằng ADMIN_PRIVATE_KEY
+Admin ký + broadcast trên MetaMask
     ↓
-Giao dịch gửi lên blockchain
+Frontend gửi txHash về backend để confirm
 ```
 
 ---
@@ -294,7 +294,7 @@ Bệnh nhân                         Backend                         Blockchain
     |------------------------------->|                                |
     |                                | 2. registerPatient()           |
     |                                |------------------------------->|
-    |                                |    (ADMIN_PRIVATE_KEY)         |
+    |                                |    (signed by PATIENT wallet)  |
     | 3. Tạo hồ sơ bệnh nhân       |                                |
     |------------------------------->|                                |
     |                                |                                |
@@ -305,7 +305,7 @@ Admin                                |                                |
     |------------------------------->|                                |
     |                                | 6. approveAccount()            |
     |                                |------------------------------->|
-    |                                |    (ADMIN_PRIVATE_KEY)         |
+    |                                |    (signed by ADMIN wallet)    |
 ```
 
 ### Step 2: Bệnh nhân cấp quyền
@@ -318,7 +318,7 @@ Bệnh nhân                         Backend                         Blockchain
     |------------------------------->|                                |
     |                                | 2. grantAccess()               |
     |                                |------------------------------->|
-    |                                |    (ADMIN_PRIVATE_KEY)         |
+    |                                |    (signed by PATIENT wallet)  |
     |                                |                                |
     |                                | 3. Emit AccessGranted event    |
     |                                |<-------------------------------|
@@ -339,7 +339,7 @@ Bác sĩ                            Backend                         IPFS        
     |                                |                                |                |
     |                                | 4. addRecord()                 |                |
     |                                |----------------------------------------------->|
-    |                                |    (ADMIN_PRIVATE_KEY)         |                |
+    |                                |    (signed by DOCTOR wallet)   |                |
     |                                |                                |                |
     |                                | 5. Emit RecordAdded event      |                |
     |                                |<-----------------------------------------------|
@@ -427,31 +427,24 @@ Frontend                    Backend
     |<-------------------------|
 ```
 
-### Backend → Blockchain
+### Backend + Frontend → Blockchain
 
 ```
-Backend                    Blockchain (Sepolia)
+Backend + Frontend         Blockchain (Sepolia)
     |                          |
-    | 1. Chuẩn bị giao dịch    |
-    |    - function: approveAccount
-    |    - params: [walletAddress]
-    |    - signer: ADMIN_PRIVATE_KEY
+    | 1. Backend prepare tx     |
+    |    - function + params    |
+    |    - trả txRequest        |
     |                          |
-    | 2. Ký giao dịch          |
-    |    (ethers.js)           |
-    |                          |
-    | 3. Gửi giao dịch         |
+    | 2. Frontend ký + broadcast|
     |------------------------->|
-    |                          | 4. Xác nhận giao dịch
-    |                          |    (trên Sepolia)
-    | 5. Nhận receipt          |
+    |                          | 3. Tx được xác nhận
+    |                          |
+    | 4. Frontend gửi txHash    |
     |<-------------------------|
-    |                          |
-    | 6. Parse event           |
-    |    (StatusChanged)       |
-    |                          |
-    | 7. Cập nhật MongoDB      |
-    |    (audit log)           |
+    | 5. Backend verify txHash  |
+    |    parse function/event   |
+    | 6. Cập nhật MongoDB/audit |
 ```
 
 ### Backend → IPFS

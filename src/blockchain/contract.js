@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { env } from '~/config/environment';
-import { provider, adminWallet, patientWallet, doctorWallet, labTechWallet } from '~/blockchain/provider';
+import { provider } from '~/blockchain/provider';
 import AccountManagerAbi from '~/blockchain/abis/AccountManager.json';
 import AccessControlAbi from '~/blockchain/abis/AccessControl.json';
 import EHRManagerAbi from '~/blockchain/abis/EHRManager.json';
@@ -23,57 +23,6 @@ validateAddress('EHR_MANAGER_ADDRESS', env.EHR_MANAGER_ADDRESS);
 const accountManager = new ethers.Contract(env.ACCOUNT_MANAGER_ADDRESS, AccountManagerAbi, provider);
 const accessControl = new ethers.Contract(env.ACCESS_CONTROL_ADDRESS, AccessControlAbi, provider);
 const ehrManager = new ethers.Contract(env.EHR_MANAGER_ADDRESS, EHRManagerAbi, provider);
-
-// Nhóm contract dùng để ĐỌC dữ liệu (provider read-only).
-const accountManagerAdmin = accountManager.connect(adminWallet);
-const accessControlAdmin = accessControl.connect(adminWallet);
-const ehrManagerAdmin = ehrManager.connect(adminWallet);
-
-// Nhóm contract dùng để gọi giao dịch cần chữ ký admin (signer = adminWallet).
-// Lưu ý: các hàm nonpayable/payable khi gọi sẽ tiêu tốn gas.
-
-// ⭐ Test Patient Contracts — dùng cho testing patient operations
-// Chỉ dùng trong development/testing!
-// Production: Frontend sẽ ký bằng MetaMask
-let accessControlPatient = null;
-let ehrManagerPatient = null;
-
-if (patientWallet) {
-    try {
-        accessControlPatient = accessControl.connect(patientWallet);
-        ehrManagerPatient = ehrManager.connect(patientWallet);
-        console.log('✅ Test Patient AccessControl connected');
-        console.log('✅ Test Patient EHRManager connected');
-    } catch (error) {
-        console.warn('⚠️  Failed to connect patient wallet to contracts:', error.message);
-    }
-}
-
-// ⭐ Test Doctor Contracts — dùng cho testing doctor operations (create lab order)
-// Chỉ dùng trong development/testing!
-let ehrManagerDoctor = null;
-
-if (doctorWallet) {
-    try {
-        ehrManagerDoctor = ehrManager.connect(doctorWallet);
-        console.log('✅ Test Doctor EHRManager connected');
-    } catch (error) {
-        console.warn('⚠️  Failed to connect doctor wallet to contracts:', error.message);
-    }
-}
-
-// ⭐ Test Lab Tech Contracts — dùng cho testing lab tech operations (receive order, post result)
-// Chỉ dùng trong development/testing!
-let ehrManagerLabTech = null;
-
-if (labTechWallet) {
-    try {
-        ehrManagerLabTech = ehrManager.connect(labTechWallet);
-        console.log('✅ Test Lab Tech EHRManager connected');
-    } catch (error) {
-        console.warn('⚠️  Failed to connect lab tech wallet to contracts:', error.message);
-    }
-}
 
 // hasFunction:
 // - Kiểm tra ABI hiện tại có chứa function signature mong đợi hay không.
@@ -126,16 +75,21 @@ const getBlockchainHealthSnapshot = async () => {
         ehrManagerAbiCompatible: hasFunction(ehrManager, 'nextRecordId()'),
     };
 
-    // Kiểm tra ví admin trong env có đang là admin theo contract hay không.
+    // Kiểm tra ADMIN_WALLET_ADDRESS (nếu được cung cấp) có đang là admin theo contract hay không.
     const adminChecks = {
-        adminAddressFromEnv: adminWallet.address,
+        adminAddressFromEnv: null,
         isAdminByContract: null,
         errors: [],
     };
 
     try {
-        if (checks.accountManagerAbiCompatible) {
-            adminChecks.isAdminByContract = await accountManager.isAdmin(adminWallet.address);
+        if (env.ADMIN_WALLET_ADDRESS) {
+            if (!ethers.isAddress(env.ADMIN_WALLET_ADDRESS)) {
+                adminChecks.errors.push('ADMIN_WALLET_ADDRESS không hợp lệ');
+            } else if (checks.accountManagerAbiCompatible) {
+                adminChecks.adminAddressFromEnv = env.ADMIN_WALLET_ADDRESS;
+                adminChecks.isAdminByContract = await accountManager.isAdmin(env.ADMIN_WALLET_ADDRESS);
+            }
         }
     } catch (error) {
         adminChecks.errors.push(error.message);
@@ -199,37 +153,14 @@ const getBlockchainHealthSnapshot = async () => {
 
 // Export đối tượng dùng chung cho toàn bộ hệ thống blockchain:
 // - read: chỉ đọc chain
-// - admin: gọi các hàm cần ký bằng ví admin
-// - patient: gọi các hàm cần ký bằng ví patient (test wallet)
-// - doctor: gọi các hàm cần ký bằng ví doctor (test wallet)
-// - labTech: gọi các hàm cần ký bằng ví lab tech (test wallet)
-// - provider/adminWallet: phục vụ các use case đặc thù khác
+// - provider: dùng để verify txHash và lấy network state
 export const blockchainContracts = {
     read: {
         accountManager,
         accessControl,
         ehrManager,
     },
-    admin: {
-        accountManager: accountManagerAdmin,
-        accessControl: accessControlAdmin,
-        ehrManager: ehrManagerAdmin,
-    },
-    patient: {
-        accessControl: accessControlPatient,  // ← For testing patient operations (grant access)
-        ehrManager: ehrManagerPatient,  // ← For testing patient operations (consent order)
-    },
-    doctor: {
-        ehrManager: ehrManagerDoctor,  // ← For testing doctor operations (create lab order)
-    },
-    labTech: {
-        ehrManager: ehrManagerLabTech,  // ← For testing lab tech operations (receive order, post result)
-    },
     provider,
-    adminWallet,
-    patientWallet,
-    doctorWallet,
-    labTechWallet,
 };
 
 export { getBlockchainHealthSnapshot };

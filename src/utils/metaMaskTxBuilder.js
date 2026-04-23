@@ -613,71 +613,8 @@ export const prepareRegisterPatientTx = async (patientAddress) => {
 }
 
 // ============================================================================
-// BROADCAST & VERIFICATION
+// VERIFICATION
 // ============================================================================
-
-/**
- * verifyAndBroadcastSignedTx
- * Xác thực signed tx + broadcast lên blockchain.
- * Dùng khi backend cần tự broadcast (ít dùng trong MetaMask flow — thường frontend tự broadcast).
- */
-export const verifyAndBroadcastSignedTx = async (signedTx, expectedSignerAddress, txContext) => {
-    try {
-        console.log(`[${txContext}] Xác thực signed transaction...`)
-
-        let txObject
-        try {
-            txObject = ethers.Transaction.from(signedTx)
-        } catch (err) {
-            throw new ApiError(StatusCodes.BAD_REQUEST, `Định dạng signed tx không hợp lệ: ${err.message}`)
-        }
-
-        const normalizedRecovered = ethers.getAddress(txObject.from)
-        const normalizedExpected = ethers.getAddress(expectedSignerAddress)
-
-        if (normalizedRecovered !== normalizedExpected) {
-            throw new ApiError(
-                StatusCodes.FORBIDDEN,
-                `Signer không khớp. Dự kiến: ${normalizedExpected}, nhận: ${normalizedRecovered}`,
-            )
-        }
-
-        console.log(`[${txContext}] Signer hợp lệ: ${normalizedRecovered}`)
-
-        const txResponse = await provider.broadcastTransaction(signedTx)
-        console.log(`[${txContext}] Broadcast thành công. TxHash: ${txResponse.hash}`)
-
-        const receipt = await Promise.race([
-            txResponse.wait(1),
-            new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Blockchain confirmation timeout (60s)')), 60000),
-            ),
-        ])
-
-        if (!receipt) {
-            throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch thất bại (receipt null)')
-        }
-        if (receipt.status !== 1) {
-            throw new ApiError(StatusCodes.BAD_REQUEST, `Giao dịch bị revert (status: ${receipt.status})`)
-        }
-
-        console.log(`[${txContext}] Confirmed — block: ${receipt.blockNumber}, gas: ${receipt.gasUsed}`)
-
-        return {
-            txHash: receipt.hash,
-            blockNumber: receipt.blockNumber,
-            gasUsed: receipt.gasUsed?.toString() || '0',
-            status: 'SUCCESS',
-            from: normalizedRecovered,
-            to: receipt.to,
-            confirmation: 1,
-        }
-    } catch (err) {
-        console.error(`[${txContext}] Thất bại:`, err.message)
-        if (err instanceof ApiError) throw err
-        throw new ApiError(StatusCodes.BAD_REQUEST, `Giao dịch thất bại: ${err.message}`)
-    }
-}
 
 /**
  * verifyTransactionOnBlockchain
@@ -749,8 +686,7 @@ export const metaMaskTxBuilder = {
     prepareAddDoctorTx,
     prepareAddLabTechTx,
     prepareRegisterPatientTx,
-    // Broadcast & verify
-    verifyAndBroadcastSignedTx,
+    // Verify
     verifyTransactionOnBlockchain,
 }
 
