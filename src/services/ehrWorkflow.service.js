@@ -265,17 +265,15 @@ const createTestResultWithRetry = async (testResultData, maxRetries = 3) => {
 
 // Step 4: Patient xác nhận đồng ý
 const consentToOrder = async (currentUser, labOrderId, txHash = null) => {
-    // [Sửa #1] Xác thực role = PATIENT (không chỉ tin middleware)
-    // [Sửa #2] Xác thực status = ACTIVE
+    // [Xác thực role = PATIENT (không chỉ tin middleware)
     await verifyRole(currentUser, 'PATIENT');
 
-    // Tìm lab order trong MongoDB
     const labOrder = await labOrderModel.LabOrderModel.findById(labOrderId);
     if (!labOrder) {
         throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy lab order');
     }
 
-    // [Sửa #3] Chuẩn hóa địa chỉ ví trước so sánh
+    // [Chuẩn hóa địa chỉ ví trước so sánh
     const normalizedPatientAddress = normalizeWalletAddress(labOrder.patientAddress);
     const normalizedUserWallet = normalizeWalletAddress(currentUser.walletAddress);
 
@@ -286,18 +284,15 @@ const consentToOrder = async (currentUser, labOrderId, txHash = null) => {
 
     // Kiểm tra trạng thái hiện tại phải là ORDERED
     if (labOrder.sampleStatus !== 'ORDERED') {
-        throw new ApiError(StatusCodes.BAD_REQUEST, `Chỉ có thể xác nhận order ở trạng thái ORDERED, hiện tại: ${labOrder.sampleStatus}`);
+        throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            `Chỉ có thể xác nhận order ở trạng thái ORDERED, hiện tại: ${labOrder.sampleStatus}`
+        );
     }
 
     const recordId = labOrder.blockchainRecordId;
     if (!recordId) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Order không có blockchainRecordId');
-    }
-
-    // [Sửa #1] Kiểm tra role trước gọi blockchain
-    const labOrderForStatus = await labOrderModel.LabOrderModel.findById(labOrderId);
-    if (labOrderForStatus && labOrderForStatus.sampleStatus !== 'ORDERED') {
-        throw new ApiError(StatusCodes.BAD_REQUEST, `Expected status ORDERED but found ${labOrderForStatus.sampleStatus}. Cannot consent to lab order`);
     }
 
     if (!txHash) {
@@ -316,39 +311,65 @@ const consentToOrder = async (currentUser, labOrderId, txHash = null) => {
         txHash,
         contract: blockchainContracts.read.ehrManager,
         functionName: 'updateRecordStatus',
-        argsValidator: (args) => Number(args?.[0]) === Number(recordId) && Number(args?.[1]) === 1,
+        argsValidator: (args) =>
+            Number(args?.[0]) === Number(recordId) && Number(args?.[1]) === 1,
     });
 
     // Cập nhật trạng thái trong MongoDB
+    // findOneAndUpdate thay vì labOrder.save() — atomic, tránh race condition
     const now = new Date();
-    labOrder.sampleStatus = 'CONSENTED';
-    labOrder.auditLogs.push({
-        from: 'ORDERED',
-        to: 'CONSENTED',
-        by: normalizedUserWallet,
-        at: now,
-        txHash,
-    });
-    await labOrder.save();
+    const updatedOrder = await labOrderModel.LabOrderModel.findOneAndUpdate(
+        { _id: labOrderId, sampleStatus: 'ORDERED' },
+        {
+            $set: {
+                sampleStatus: 'CONSENTED',
+                txHash,
+                // Lưu wallet đã được normalize
+                patientWalletAddress: normalizedUserWallet,
+            },
+            $push: {
+                auditLogs: {
+                    from: 'ORDERED',
+                    to: 'CONSENTED',
+                    by: normalizedUserWallet,
+                    at: now,
+                    txHash,
+                },
+            },
+        },
+        { new: true }
+    );
+
+    if (!updatedOrder) {
+        throw new ApiError(
+            StatusCodes.CONFLICT,
+            'Lab order đã bị thay đổi bởi request khác hoặc không còn ở trạng thái ORDERED'
+        );
+    }
 
     // Ghi audit log
-    await auditLogModel.createLog({
-        userId: currentUser._id,
-        walletAddress: normalizedUserWallet,
-        action: 'CONSENT_LAB_ORDER',
-        entityType: 'LAB_ORDER',
-        entityId: labOrder._id,
-        txHash,
-        status: 'SUCCESS',
-        details: {
-            note: `Patient consented to lab order ${labOrderId}`,
-            recordId,
-        },
-    });
+    // Non-blocking — không để audit fail ảnh hưởng main flow
+    try {
+        await auditLogModel.createLog({
+            userId: currentUser._id,
+            walletAddress: normalizedUserWallet,
+            action: 'CONSENT_LAB_ORDER',
+            entityType: 'LAB_ORDER',
+            entityId: updatedOrder._id,
+            txHash,
+            status: 'SUCCESS',
+            details: {
+                note: `Patient consented to lab order ${labOrderId}`,
+                recordId,
+            },
+        });
+    } catch (auditError) {
+        console.error(`[Consent Order] Audit log failed (non-blocking):`, auditError.message);
+    }
 
     return {
         message: 'Xác nhận đồng ý thành công',
-        orderId: labOrder._id.toString(),
+        orderId: updatedOrder._id.toString(),
         blockchainRecordId: recordId,
         txHash,
         status: 'CONSENTED',
@@ -358,23 +379,21 @@ const consentToOrder = async (currentUser, labOrderId, txHash = null) => {
 
 // Step 5: Lab Tech tiếp nhận order
 const receiveOrder = async (currentUser, labOrderId, txHash = null) => {
-    // [Sửa #1] Xác thực role = LAB_TECH (không chỉ tin middleware)
-    // [Sửa #2] Xác thực status = ACTIVE
     await verifyRole(currentUser, 'LAB_TECH');
 
+    // FIX #1: Chỉ query 1 lần, xóa labOrderForReceive
     const labOrder = await labOrderModel.LabOrderModel.findById(labOrderId);
     if (!labOrder) {
         throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy lab order');
     }
 
-    // Kiểm tra trạng thái phải là CONSENTED
     if (labOrder.sampleStatus !== 'CONSENTED') {
-        throw new ApiError(StatusCodes.BAD_REQUEST, `Chỉ có thể tiếp nhận order ở trạng thái CONSENTED, hiện tại: ${labOrder.sampleStatus}`);
+        throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            `Chỉ có thể tiếp nhận order ở trạng thái CONSENTED, hiện tại: ${labOrder.sampleStatus}`
+        );
     }
 
-    // Xác thực: Lab tech này được assign để làm order này
-    // [Vấn đề 3] Xác thực: Lab tech này được assign để làm order này
-    // Chi tiết: currentUser._id là ObjectId của user account, assignedLabTech cũng là ObjectId
     if (!labOrder.assignedLabTech || labOrder.assignedLabTech.toString() !== currentUser._id.toString()) {
         throw new ApiError(
             StatusCodes.FORBIDDEN,
@@ -383,18 +402,11 @@ const receiveOrder = async (currentUser, labOrderId, txHash = null) => {
         );
     }
 
-    // [HIGH FIX #3] Normalize wallet address
     const normalizedLabTechWallet = normalizeWalletAddress(currentUser.walletAddress);
 
     const recordId = labOrder.blockchainRecordId;
     if (!recordId) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Order không có blockchainRecordId');
-    }
-
-    // [Sửa #1] Kiểm tra trạng thái trước gọi blockchain
-    const labOrderForReceive = await labOrderModel.LabOrderModel.findById(labOrderId);
-    if (labOrderForReceive && labOrderForReceive.sampleStatus !== 'CONSENTED') {
-        throw new ApiError(StatusCodes.BAD_REQUEST, `Expected status CONSENTED but found ${labOrderForReceive.sampleStatus}. Cannot receive lab order`);
     }
 
     if (!txHash) {
@@ -413,40 +425,63 @@ const receiveOrder = async (currentUser, labOrderId, txHash = null) => {
         txHash,
         contract: blockchainContracts.read.ehrManager,
         functionName: 'updateRecordStatus',
-        argsValidator: (args) => Number(args?.[0]) === Number(recordId) && Number(args?.[1]) === 2,
+        argsValidator: (args) =>
+            Number(args?.[0]) === Number(recordId) && Number(args?.[1]) === 2,
     });
 
-    // Cập nhật trạng thái trong MongoDB
+    // FIX #2 + #3: findOneAndUpdate atomic, thêm txHash vào $set
     const now = new Date();
-    labOrder.sampleStatus = 'IN_PROGRESS';
-    labOrder.collectedAt = now;
-    labOrder.auditLogs.push({
-        from: 'CONSENTED',
-        to: 'IN_PROGRESS',
-        by: normalizedLabTechWallet,
-        at: now,
-        txHash,
-    });
-    await labOrder.save();
-
-    // Ghi audit log
-    await auditLogModel.createLog({
-        userId: currentUser._id,
-        walletAddress: normalizedLabTechWallet,
-        action: 'RECEIVE_LAB_ORDER',
-        entityType: 'LAB_ORDER',
-        entityId: labOrder._id,
-        txHash,
-        status: 'SUCCESS',
-        details: {
-            note: `Lab tech received lab order ${labOrderId}`,
-            recordId,
+    const updatedOrder = await labOrderModel.LabOrderModel.findOneAndUpdate(
+        { _id: labOrderId, sampleStatus: 'CONSENTED' },
+        {
+            $set: {
+                sampleStatus: 'IN_PROGRESS',
+                collectedAt: now,
+                txHash, // FIX #3: lưu txHash lên top-level field
+                labTechWalletAddress: normalizedLabTechWallet,
+            },
+            $push: {
+                auditLogs: {
+                    from: 'CONSENTED',
+                    to: 'IN_PROGRESS',
+                    by: normalizedLabTechWallet,
+                    at: now,
+                    txHash,
+                },
+            },
         },
-    });
+        { new: true }
+    );
+
+    if (!updatedOrder) {
+        throw new ApiError(
+            StatusCodes.CONFLICT,
+            'Lab order đã bị thay đổi bởi request khác hoặc không còn ở trạng thái CONSENTED'
+        );
+    }
+
+    // FIX #4: Bọc try/catch — audit fail không được block response
+    try {
+        await auditLogModel.createLog({
+            userId: currentUser._id,
+            walletAddress: normalizedLabTechWallet,
+            action: 'RECEIVE_LAB_ORDER',
+            entityType: 'LAB_ORDER',
+            entityId: updatedOrder._id,
+            txHash,
+            status: 'SUCCESS',
+            details: {
+                note: `Lab tech received lab order ${labOrderId}`,
+                recordId,
+            },
+        });
+    } catch (auditError) {
+        console.error(`[Receive Order] Audit log failed (non-blocking):`, auditError.message);
+    }
 
     return {
         message: 'Tiếp nhận order thành công',
-        orderId: labOrder._id.toString(),
+        orderId: updatedOrder._id.toString(),
         blockchainRecordId: recordId,
         txHash,
         status: 'IN_PROGRESS',
@@ -487,7 +522,7 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
         );
     }
 
-    // ✅ [HIGH FIX #3] Normalize wallet address
+    // Normalize wallet address
     const normalizedLabTechWallet = normalizeWalletAddress(currentUser.walletAddress);
 
     const recordId = labOrder.blockchainRecordId;
@@ -508,9 +543,9 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
         postedAt: new Date().toISOString(),
     };
 
-    // ✅ [MEDIUM FIX #6] Simplified: metadata stored in MongoDB
+    // [MEDIUM FIX #6] Simplified: metadata stored in MongoDB
     // MongoDB-only approach - no IPFS/Storacha
-    console.log(`[Lab Result] 💾 Storing result metadata to MongoDB for order: ${recordId}`);
+    console.log(`[Lab Result] Storing result metadata to MongoDB for order: ${recordId}`);
 
     // 2. Tính labResultHash = keccak256(kết quả)
     const labResultString = JSON.stringify(labResultMetadata);
@@ -544,6 +579,41 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
         throw new ApiError(StatusCodes.BAD_REQUEST, `Gọi blockchain postLabResult thất bại: ${blockchainError.message}`);
     }
 
+    // 4. Cập nhật trạng thái trong MongoDB trước audit log, dùng findOneAndUpdate để atomic + tránh race condition
+    const now = new Date();
+    const updatedOrder = await labOrderModel.LabOrderModel.findOneAndUpdate(
+        { _id: labOrderId, sampleStatus: 'IN_PROGRESS' },
+        {
+            $set: {
+                sampleStatus: 'RESULT_POSTED',
+                labResultHash,
+                labResultData: rawData,
+                labResultNote: note,
+                processingAt: now,
+                labTechWalletAddress: normalizedLabTechWallet,
+                txHash: confirmedTxHash,
+            },
+            $push: {
+                auditLogs: {
+                    from: 'IN_PROGRESS',
+                    to: 'RESULT_POSTED',
+                    by: normalizedLabTechWallet,
+                    at: now,
+                    txHash: confirmedTxHash,
+                },
+            },
+        },
+        { new: true }
+    );
+
+    if (!updatedOrder) {
+        throw new ApiError(
+            StatusCodes.CONFLICT,
+            'Lab order đã bị thay đổi bởi request khác hoặc không còn ở trạng thái IN_PROGRESS'
+        );
+    }
+
+
     // Ghi audit log trực tiếp với txHash (blockchain là authority)
     try {
         await auditLogModel.createLog({
@@ -566,32 +636,31 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
         console.error(`[Lab Result] Audit log failed (non-blocking):`, auditError.message);
     }
 
-    // 4. Cập nhật trạng thái trong MongoDB
-    const now = new Date();
-    labOrder.sampleStatus = 'RESULT_POSTED';
-    labOrder.labResultHash = labResultHash;
-    labOrder.labResultData = rawData;
-    labOrder.labResultNote = note;
-    labOrder.processingAt = now;
-    // SNAPSHOT: Store lab tech wallet snapshot for query optimization
-    labOrder.labTechWalletAddress = labTechWalletSnapshot;
-    // PROOF: Store tx hash (source of truth)
-    labOrder.txHash = txHash;
-    labOrder.auditLogs.push({
-        from: 'IN_PROGRESS',
-        to: 'RESULT_POSTED',
-        by: normalizedLabTechWallet,
-        at: now,
-        txHash,
-    });
-    await labOrder.save();
+    // // 4. Cập nhật trạng thái trong MongoDB
+    // const now = new Date();
+    // labOrder.sampleStatus = 'RESULT_POSTED';
+    // labOrder.labResultHash = labResultHash;
+    // labOrder.labResultData = rawData;
+    // labOrder.labResultNote = note;
+    // labOrder.processingAt = now;
+    // // SNAPSHOT: Store lab tech wallet snapshot for query optimization
+    // labOrder.labTechWalletAddress = labTechWalletSnapshot;
+    // // PROOF: Store tx hash (source of truth)
+    // labOrder.txHash = txHash;
+    // labOrder.auditLogs.push({
+    //     from: 'IN_PROGRESS',
+    //     to: 'RESULT_POSTED',
+    //     by: normalizedLabTechWallet,
+    //     at: now,
+    //     txHash,
+    // });
+    // await labOrder.save();
 
     // STEP: Cập nhật trạng thái Hồ sơ Y tế = HAS_RESULT
     // ════════════════════════════════════════════════════════════════════════════════
-    if (labOrder.relatedMedicalRecordId) {
+    if (updatedOrder.relatedMedicalRecordId) {
         try {
-            // [CENTRALIZED FIX] Use medicalRecordService.updateStatus() for consistent validation
-            await medicalRecordService.updateStatus(labOrder.relatedMedicalRecordId, 'HAS_RESULT');
+            await medicalRecordService.updateStatus(updatedOrder.relatedMedicalRecordId, 'HAS_RESULT');
         } catch (recordError) {
             console.warn(`[Lab Result] Medical Record update failed (non-blocking):`, recordError.message);
         }
@@ -669,25 +738,30 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
         }, 3);  // Retry tối đa 3 lần
 
         if (retryResult.success) {
-            // Thành công: link TestResult vào LabOrder
-            const testResult = retryResult.testResult;
-            labOrder.testResultId = testResult._id;
-            labOrder.testResultStatus = TEST_RESULT_STATUS.SUCCESS;
             testResultStatus = TEST_RESULT_STATUS.SUCCESS;
             testResultRetryCount = retryResult.attempt - 1;
-            
-            console.log(`[Lab Result] TestResult tạo thành công và link vào LabOrder: ${testResult._id}`);
-        } else {
-            // Thất bại sau 3 lần retry: lưu lỗi để client và IT biết
-            labOrder.testResultId = null;
-            labOrder.testResultStatus = TEST_RESULT_STATUS.FAILED;
-            labOrder.testResultError = retryResult.error;
+
+            // FIX #4: Save testResultId riêng bằng $set, không đụng các field khác
+            await labOrderModel.LabOrderModel.findByIdAndUpdate(updatedOrder._id, {
+                $set: {
+                    testResultId: retryResult.testResult._id,
+                    testResultStatus: TEST_RESULT_STATUS.SUCCESS,
+                },
+            });
+        } 
+        // Update DB trực tiếp để ghi nhận TestResult FAILED, tránh race condition và không ghi đè dữ liệu khác
+        else {
             testResultStatus = TEST_RESULT_STATUS.FAILED;
             testResultRetryCount = retryResult.attempt;
             testResultError = retryResult.error;
-            
-            console.warn(`[Lab Result] ❌ TestResult tạo thất bại sau ${retryResult.attempt} lần retry: ${retryResult.error}`);
-            // Non-blocking: main flow tiếp tục dù TestResult fail
+
+            await labOrderModel.LabOrderModel.findByIdAndUpdate(updatedOrder._id, {
+                $set: {
+                    testResultId: null,
+                    testResultStatus: TEST_RESULT_STATUS.FAILED,
+                    testResultError: retryResult.error,
+                },
+            });
         }
 
         // Lưu trạng thái TestResult vào LabOrder
@@ -756,7 +830,7 @@ const verifyDoctorRoleHelper = async (currentUser) => {
     } catch (err) {
         throw new ApiError(
             StatusCodes.FORBIDDEN,
-            `❌ Chỉ bác sĩ (DOCTOR) mới có thể thêm diễn giải lâm sàng. ` +
+            `Chỉ bác sĩ (DOCTOR) mới có thể thêm diễn giải lâm sàng. ` +
             `Bạn hiện tại có role: ${currentUser.role || 'UNKNOWN'}. ` +
             `Hãy liên hệ admin để cấp role DOCTOR.`
         );
@@ -828,12 +902,12 @@ const verifyPatientAccessHelper = async (patientAddr, doctorAddr, requiredLevel)
                 `3. Chờ 1-2 phút rồi thử lại`
             );
         }
-        console.log(`[Clinical Interpretation] ✅ Verified: Access level ${levelsMap[requiredLevel]} granted for patient`);
+        console.log(`[Clinical Interpretation] Verified: Access level ${levelsMap[requiredLevel]} granted for patient`);
     } catch (err) {
         if (err.statusCode) throw err;
         throw new ApiError(
             StatusCodes.INTERNAL_SERVER_ERROR,
-            `❌ Không thể kiểm tra quyền truy cập: ${err.message}`
+            `Không thể kiểm tra quyền truy cập: ${err.message}`
         );
     }
 };
@@ -847,11 +921,12 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
 
     // Step 0: Validate input
     const { interpretation, recommendation, confirmedDiagnosis, interpreterNote, txHash: confirmedTxHash } = interpretationData;
-    if (!confirmedDiagnosis) {
+    if (!confirmedDiagnosis || !interpretation) {
         throw new ApiError(
             StatusCodes.BAD_REQUEST,
-            `Field "confirmedDiagnosis" bắt buộc. Bác sĩ phải xác nhận chẩn đoán sau khi review kết quả lab. ` +
-            `(Frontend nên pre-fill từ medical record.diagnosis để tiện lợi)`
+            `Field "confirmedDiagnosis" và "interpretation" đều bắt buộc. ` +
+            `Bác sĩ phải xác nhận chẩn đoán và nhập diễn giải lâm sàng sau khi review kết quả lab. ` +
+            `(Frontend nên pre-fill confirmedDiagnosis từ medical record.diagnosis)`
         );
     }
 
@@ -868,14 +943,14 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
     console.log(`[Clinical Interpretation] Step 3: Loading lab order...`);
     const labOrder = await labOrderModel.LabOrderModel.findById(labOrderId);
     if (!labOrder) {
-        throw new ApiError(StatusCodes.NOT_FOUND, `❌ Lab order không tồn tại: ${labOrderId}`);
+        throw new ApiError(StatusCodes.NOT_FOUND, `Lab order không tồn tại: ${labOrderId}`);
     }
 
     // Step 4: Verify lab order status = RESULT_POSTED
     if (labOrder.sampleStatus !== 'RESULT_POSTED') {
         throw new ApiError(
             StatusCodes.BAD_REQUEST,
-            `❌ Chỉ có thể thêm diễn giải khi lab result đã được post.\\n` +
+            `Chỉ có thể thêm diễn giải khi lab result đã được post.\\n` +
             `Status hiện tại: ${labOrder.sampleStatus}\\n` +
             `Vui lòng chờ kỹ thuật viên post kết quả.`
         );
@@ -883,7 +958,7 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
 
     const recordId = labOrder.blockchainRecordId;
     if (!recordId) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, `❌ Lab order không có blockchainRecordId`);
+        throw new ApiError(StatusCodes.BAD_REQUEST, `Lab order không có blockchainRecordId`);
     }
 
     // Auto-fix missing requiredLevel for old orders
@@ -891,7 +966,7 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
         const calculatedLevel = labOrder.recordType === 'HIV_TEST' ? 3 : 2;
         labOrder.requiredLevel = calculatedLevel;
         await labOrder.save({ validateBeforeSave: false });
-        console.log(`[Clinical Interpretation] ✅ Auto-fixed missing requiredLevel: ${calculatedLevel}`);
+        console.log(`[Clinical Interpretation] Auto-fixed missing requiredLevel: ${calculatedLevel}`);
     }
 
     // Step 5: Verify patient access grant
@@ -935,29 +1010,48 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
     // Step 8: Update MongoDB
     console.log(`[Clinical Interpretation] Step 8: Updating MongoDB...`);
     const now = new Date();
-    labOrder.sampleStatus = 'DOCTOR_REVIEWED';
-    labOrder.interpretationHash = interpretationHash;
-    labOrder.clinicalInterpretation = interpretation;
-    labOrder.recommendation = recommendation;
-    labOrder.interpreterNote = interpreterNote;
-    labOrder.doctorId = currentUser._id?.toString();
-    labOrder.doctorWalletAddress = normalizedDoctorAddr;
-    labOrder.txHash = txHash;
-    labOrder.auditLogs.push({
-        from: 'RESULT_POSTED',
-        to: 'DOCTOR_REVIEWED',
-        by: normalizedDoctorAddr,
-        at: now,
-        txHash,
-    });
+    const updatedOrder = await labOrderModel.LabOrderModel.findOneAndUpdate(
+        { _id: labOrderId, sampleStatus: 'RESULT_POSTED' },
+        {
+            $set: {
+                sampleStatus: 'DOCTOR_REVIEWED',
+                interpretationHash,
+                clinicalInterpretation: interpretation,
+                recommendation,
+                interpreterNote,
+                doctorId: currentUser._id?.toString(),
+                doctorWalletAddress: normalizedDoctorAddr,
+                txHash: confirmedTxHash,
+            },
+            $push: {
+                auditLogs: {
+                    from: 'RESULT_POSTED',
+                    to: 'DOCTOR_REVIEWED',
+                    by: normalizedDoctorAddr,
+                    at: now,
+                    txHash: confirmedTxHash,
+                },
+            },
+        },
+        { new: true }
+    );
+    // Nếu lab-order bị thay đổi throw lỗi
+    if (!updatedOrder) {
+        throw new ApiError(
+            StatusCodes.CONFLICT,
+            'Lab order đã bị thay đổi bởi request khác hoặc không còn ở trạng thái RESULT_POSTED'
+        );
+    }
+
+    console.log(`[Clinical Interpretation] MongoDB status updated to DOCTOR_REVIEWED`);
 
     try {
         await labOrder.save();
-        console.log(`[Clinical Interpretation] ✅ MongoDB status updated to DOCTOR_REVIEWED`);
+        console.log(`[Clinical Interpretation] MongoDB status updated to DOCTOR_REVIEWED`);
     } catch (saveError) {
         throw new ApiError(
             StatusCodes.INTERNAL_SERVER_ERROR,
-            `❌ CRITICAL: Failed to save to database: ${saveError.message}`
+            `CRITICAL: Failed to save to database: ${saveError.message}`
         );
     }
 
@@ -1000,7 +1094,7 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
                 }
             );
             syncStatus = 'COMPLETED';
-            console.log('✅ Medical record diagnosis synced successfully (relationship existed since Step 3)');
+            console.log('Medical record diagnosis synced successfully (relationship existed since Step 3)');
         } catch (syncErr) {
             console.error('Sync to medical record FAILED:', syncErr.message);
             console.error('ℹWill retry later - main flow remains valid');
@@ -1089,11 +1183,11 @@ const completeRecord = async (currentUser, labOrderId, txHash = null) => {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Order không có blockchainRecordId');
     }
 
-    // [MEDIUM FIX #1] Pre-validate status before blockchain call
-    const labOrderForComplete = await labOrderModel.LabOrderModel.findById(labOrderId);
-    if (labOrderForComplete && labOrderForComplete.sampleStatus !== 'DOCTOR_REVIEWED') {
-        throw new ApiError(StatusCodes.BAD_REQUEST, `Expected status DOCTOR_REVIEWED but found ${labOrderForComplete.sampleStatus}. Cannot finalize record`);
-    }
+    // // [MEDIUM FIX #1] Pre-validate status before blockchain call
+    // const labOrderForComplete = await labOrderModel.LabOrderModel.findById(labOrderId);
+    // if (labOrderForComplete && labOrderForComplete.sampleStatus !== 'DOCTOR_REVIEWED') {
+    //     throw new ApiError(StatusCodes.BAD_REQUEST, `Expected status DOCTOR_REVIEWED but found ${labOrderForComplete.sampleStatus}. Cannot finalize record`);
+    // }
 
     const normalizedDoctorWallet = normalizeWalletAddress(currentUser.walletAddress);
 
@@ -1118,48 +1212,63 @@ const completeRecord = async (currentUser, labOrderId, txHash = null) => {
 
     // Cập nhật trạng thái trong MongoDB
     const now = new Date();
-    // [HIGH FIX #3] Normalize wallet address
+    const updatedOrder = await labOrderModel.LabOrderModel.findOneAndUpdate(
+        { _id: labOrderId, sampleStatus: 'DOCTOR_REVIEWED' },
+        {
+            $set: {
+                sampleStatus: 'COMPLETE',
+                completedAt: now,
+                txHash, // FIX #3: Lưu txHash lên top-level field
+                doctorWalletAddress: normalizedDoctorWallet,
+            },
+            $push: {
+                auditLogs: {
+                    from: 'DOCTOR_REVIEWED',
+                    to: 'COMPLETE',
+                    by: normalizedDoctorWallet,
+                    at: now,
+                    txHash,
+                },
+            },
+        },
+        { new: true }
+    );
 
-    labOrder.sampleStatus = 'COMPLETE';
-    labOrder.completedAt = now; // IMPORTANT: Set completedAt field
-    labOrder.auditLogs.push({
-        from: 'DOCTOR_REVIEWED',
-        to: 'COMPLETE',
-        by: normalizedDoctorWallet,
-        at: now,
-        txHash,
-    });
-    await labOrder.save();
+    if (!updatedOrder) {
+        throw new ApiError(
+            StatusCodes.CONFLICT,
+            'Lab order đã bị thay đổi bởi request khác hoặc không còn ở trạng thái DOCTOR_REVIEWED'
+        );
+    }
 
-    // [STATE PROPAGATION] Sync Medical Record status when Lab Order COMPLETE
-    // Rule: Lab Order = source of truth
-    //    Medical Record = dependent (must follow)
-    // When Lab Order COMPLETE → Medical Record also COMPLETE
-    if (labOrder.relatedMedicalRecordId) {
+    // Sync Medical Record
+    if (updatedOrder.relatedMedicalRecordId) {
         try {
-            // [CENTRALIZED FIX] Use medicalRecordService.updateStatus() for consistent validation
-            await medicalRecordService.updateStatus(labOrder.relatedMedicalRecordId, 'COMPLETE');
+            await medicalRecordService.updateStatus(updatedOrder.relatedMedicalRecordId, 'COMPLETE');
         } catch (syncErr) {
             console.error(`[STATE SYNC] Failed to update medical record: ${syncErr.message}`);
-            // Log but don't throw - lab order is already complete
-            // Medical record update is async side effect, not critical path
         }
     }
 
-    // Ghi audit log
-    await auditLogModel.createLog({
-        userId: currentUser._id,
-        walletAddress: normalizedDoctorWallet,
-        action: 'COMPLETE_RECORD',
-        entityType: 'LAB_ORDER',
-        entityId: labOrder._id,
-        txHash,
-        status: 'SUCCESS',
-        details: {
-            note: `Doctor completed lab order ${labOrderId}`,
-            recordId,
-        },
-    });
+    // Bọc auditLog trong try/catch — không được block main flow
+     try {
+        await auditLogModel.createLog({
+            userId: currentUser._id,
+            walletAddress: normalizedDoctorWallet,
+            action: 'COMPLETE_RECORD',
+            entityType: 'LAB_ORDER',
+            entityId: updatedOrder._id,
+            txHash,
+            status: 'SUCCESS',
+            details: {
+                note: `Doctor completed lab order ${labOrderId}`,
+                recordId,
+            },
+        });
+    } 
+    catch (auditError) {
+        console.error(`[Complete Record] Audit log failed (non-blocking):`, auditError.message);
+    }
 
     return {
         message: 'Chốt hồ sơ thành công',

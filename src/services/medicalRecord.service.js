@@ -7,7 +7,7 @@ import { blockchainContracts } from '~/blockchain/contract';
 import { userModel } from '~/models/user.model';
 
 /**
- * ⚠️ HYBRID SERVICE - SHARED BY OFF-CHAIN & BLOCKCHAIN WORKFLOWS
+ * HYBRID SERVICE - SHARED BY OFF-CHAIN & BLOCKCHAIN WORKFLOWS
  * 
  * ═════════════════════════════════════════════════════════════════════════════════
  * 
@@ -15,13 +15,13 @@ import { userModel } from '~/models/user.model';
  * ──────────────────────
  * This service provides DUAL functionality:
  * 
- * ✅ OFF-CHAIN: Medical Record Storage (MongoDB)
+ *    OFF-CHAIN: Medical Record Storage (MongoDB)
  *    → Doctor creates records with examination findings, initial diagnosis (based on symptoms)
  *    → Endpoints: POST /doctors/patients/:patientId/medical-records (standalone)
  *    → Purpose: Clinical notes during physical exam, decide which lab tests to order
  *    → Access Control: Validated via AccessControl smart contract before blockchain operations
  * 
- * ✅ ON-CHAIN Integration: Blockchain Sync & Hash Verification
+ *    ON-CHAIN Integration: Blockchain Sync & Hash Verification
  *    → syncConfirmedDiagnosisFromInterpretation() - ACTIVELY USED by ehrWorkflow.addClinicalInterpretation()
  *    → getDetailWithHashVerification() - Verify interpretation hash integrity + data tampering
  *    → Purpose: Bridge blockchain lab results interpretation back to medical record
@@ -55,20 +55,20 @@ import { userModel } from '~/models/user.model';
  * 
  * Business Logic Enforced:
  * ────────────────────────
- * ✅ 1 patient = 1 ACTIVE medical record (statuses: CREATED, WAITING_RESULT, HAS_RESULT, DIAGNOSED)
- * ✅ Multiple COMPLETE/REVOKED records allowed (historical records preserved)
- * ✅ Database enforces via: unique partial index on (patientId, _destroy) with status filter
- * ✅ Application enforces via: createNew() checks active records before allowing new
- * ✅ Access control validated before any on-chain operation
+ * 1 patient = 1 ACTIVE medical record (statuses: CREATED, WAITING_RESULT, HAS_RESULT, DIAGNOSED)
+ * Multiple COMPLETE/REVOKED records allowed (historical records preserved)
+ * Database enforces via: unique partial index on (patientId, _destroy) with status filter
+ * Application enforces via: createNew() checks active records before allowing new
+ * Access control validated before any on-chain operation
  * 
  * Data Integrity:
  * ───────────────
- * ✅ Keccak256 hashing for interpretation immutability
- * ✅ Hash stored in medical record for tamper detection
- * ✅ getDetailWithHashVerification() validates hash against blockchain
- * ✅ Audit trail in auditLog model + blockchain
+ * Keccak256 hashing for interpretation immutability
+ * Hash stored in medical record for tamper detection
+ * getDetailWithHashVerification() validates hash against blockchain
+ * Audit trail in auditLog model + blockchain
  * 
- * ⚠️ CRITICAL NOTES:
+ * CRITICAL NOTES:
  * - Functions were previously marked for deletion - DO NOT DELETE
  * - syncConfirmedDiagnosisFromInterpretation() is ACTIVELY USED at ehrWorkflow Step 7.5
  * - getDetailWithHashVerification() ensures blockchain interpretation integrity
@@ -207,7 +207,7 @@ const createNew = async (patientId, data, currentUser) => {
             },
         });
 
-        // 🆕 Return created record details (thêm diagnosis status)
+        // Return created record details (thêm diagnosis status)
         return {
             medicalRecordId: medicalRecord._id,
             status: medicalRecord.status,
@@ -259,7 +259,7 @@ const getDetail = async (medicalRecordId, currentUser) => {
         const currentUserWallet = currentUser.walletAddress;
         console.log('[STEP 1] Doctor wallet from token:', currentUserWallet);
 
-        // 🔐 STEP 2: Query patient from medical record (relationship 1)
+        // STEP 2: Query patient from medical record (relationship 1)
         const patient = await patientModel.findById(medicalRecord.patientId);
         if (!patient) {
             console.error('[STEP 2] Patient not found for medical record');
@@ -425,7 +425,7 @@ const syncConfirmedDiagnosisFromInterpretation = async (medicalRecordId, interpr
 // 🆕 Lấy tất cả medical records của 1 bệnh nhân (doctor phải có quyền)
 const getPatientMedicalRecords = async (patientId, statusArray, currentUser) => {
     try {
-        // 🔐 STEP 1: Verify doctor has access to this patient (via blockchain or middleware)
+        // STEP 1: Verify doctor has access to this patient (via blockchain or middleware)
         // For now, we'll allow if doctor is creating/viewing records
         // In production, check blockchain grantAccess event
 

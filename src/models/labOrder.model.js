@@ -32,7 +32,7 @@ const labOrderSchema = new mongoose.Schema(
             required: true,
         },
 
-        // 🆕 Link back to medical record (for sync diagnosis)
+        // Link back to medical record (for sync diagnosis)
         relatedMedicalRecordId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'medical_records',
