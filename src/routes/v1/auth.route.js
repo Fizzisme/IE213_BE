@@ -9,11 +9,12 @@ const Router = express.Router();
  * @swagger
  * /v1/auth/register:
  *   post:
- *     summary: Register new user (Patient/Doctor/LabTech)
+ *     summary: Register new Patient account
  *     tags: [Auth]
  *     description: |
- *       Đăng ký tài khoản mới. Bắt buộc phải có walletAddress.
- *       Sau khi đăng ký, user status = PENDING, chờ admin duyệt.
+ *       Đăng ký tài khoản Bệnh nhân mới. Bắt buộc phải có walletAddress.
+ *       Bác sĩ và Kỹ thuật viên Lab được Admin tạo trực tiếp, không qua registration công khai.
+ *       Sau khi đăng ký, status = PENDING, chờ admin duyệt.
  *       Email và wallet phải là unique (không duplicate).
  *     requestBody:
  *       required: true

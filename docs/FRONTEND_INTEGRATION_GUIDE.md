@@ -60,7 +60,9 @@
 
 ## 2. Xác thực & JWT
 
-### 2.1 Đăng ký (Patient)
+### 2.1 Đăng ký (Dành riêng cho Bệnh nhân)
+
+> ⚠️ **Lưu ý quan trọng:** Hệ thống đã chuyển sang mô hình đăng ký tự phục vụ cho Bệnh nhân. API đăng ký chung trước đây (`/v1/auth/register`) hiện chỉ áp dụng cho role **PATIENT**. Các role Bác sĩ và Lab Tech sẽ do Admin tạo trực tiếp.
 
 ```http
 POST /v1/auth/register
@@ -83,11 +85,13 @@ Content-Type: application/json
 }
 ```
 
-> ⚠️ **Lưu ý:** Sau đăng ký, tài khoản ở trạng thái `PENDING`. Cần Admin duyệt mới thành `ACTIVE`.
+> 💡 **Registry API của Admin:** API đăng ký dành riêng cho Admin (`/v1/admins/auth/register`) đã bị **XÓA**. Admin chỉ có thể được khởi tạo qua script database hoặc migration nội bộ để đảm bảo bảo mật.
+
+> ⚠️ **Trạng thái:** Sau khi đăng ký thành công, tài khoản Bệnh nhân ở trạng thái `PENDING`. Cần Admin duyệt (Approve) mới có thể đăng nhập và sử dụng hệ thống.
 
 **Lỗi thường gặp:**
-- `400` — Thiếu field, password < 8 ký tự, wallet sai format
-- `409` — Email hoặc wallet đã tồn tại
+- `400` — Thiếu field (walletAddress là bắt buộc), password < 8 ký tự, wallet sai format.
+- `409` — Email, NationId hoặc Wallet address đã tồn tại trong hệ thống.
 
 ---
 

@@ -30,7 +30,7 @@ import { blockchainContracts } from '~/blockchain/contract'
  * FIX: Đổi tên thành _createDoctorInDB để thể hiện đây là hàm nội bộ.
  * Không export — mọi caller từ ngoài phải đi qua confirmCreateDoctor
  * để đảm bảo blockchain đã được verify trước khi ghi DB.
- * Đồng thầm xóa audit log ở đây vì confirmCreateDoctor đã ghi rồi — tránh duplicate.
+ * Đồng thời xóa audit log ở đây vì confirmCreateDoctor đã ghi rồi — tránh duplicate.
  */
 const _createDoctorInDB = async ({ email, password, nationId, walletAddress, adminId }) => {
     // Kiểm tra email đã tồn tại
@@ -85,7 +85,7 @@ const _createDoctorInDB = async ({ email, password, nationId, walletAddress, adm
     // Tạo doctor profile
     const doctorData = await doctorModel.DoctorModel.create({
         userId: newUser._id,
-        fullName: email.split('@')[0], // Dùng phần trước @ của email làm fullName tạm thởi
+        fullName: email.split('@')[0], // Dùng phần trước @ của email làm fullName tạm thời
         email: email,
         specialization: 'General',
         licenseNumber: '',
@@ -104,7 +104,7 @@ const _createDoctorInDB = async ({ email, password, nationId, walletAddress, adm
 // FIX: Đổi tên thành _createLabTechInDB để thể hiện đây là hàm nội bộ.
 // Không export — mọi caller từ ngoài phải đi qua confirmCreateLabTech
 // để đảm bảo blockchain đã được verify trước khi ghi DB.
-// Đồng thầm xóa audit log ở đây vì confirmCreateLabTech đã ghi rồi — tránh duplicate.
+// Đồng thời xóa audit log ở đây vì confirmCreateLabTech đã ghi rồi — tránh duplicate.
 const _createLabTechInDB = async ({ email, password, nationId, walletAddress, adminId }) => {
     // Kiểm tra email đã tồn tại
     const existingUser = await userModel.UserModel.findOne({
