@@ -8,9 +8,11 @@ import ApiError from '~/utils/ApiError';
 
 // Hàm lấy accessToken và refreshToken trả về từ JWTProvider
 const issueTokens = async (user) => {
+    const walletAddress = user.authProviders?.find((p) => p.walletAddress)?.walletAddress || null;
     const payload = {
         _id: user._id,
         role: user.role,
+        walletAddress,
     };
 
     const accessToken = await JwtProvider.generateToken(

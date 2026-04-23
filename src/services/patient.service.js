@@ -70,7 +70,7 @@ const getAll = async () => {
 };
 
 const getPatientById = async (patientId) => {
-    const patient = await patientModel.findByUserId(patientId);
+    const patient = await patientModel.findById(patientId);
     if (!patient) throw new ApiError(StatusCodes.NOT_FOUND, 'Không có hồ sơ bệnh nhân');
     return patient;
 };
@@ -92,7 +92,7 @@ const getMyLabOrders = async (user, query = {}) => {
         throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy thông tin user');
     }
 
-    const patientAddress = userInfo.metaMaskAddress?.toLowerCase() || userInfo.walletAddress?.toLowerCase();
+    const patientAddress = userInfo.authProviders?.find(p => p.walletAddress)?.walletAddress?.toLowerCase();
     if (!patientAddress) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Bệnh nhân chưa có wallet address');
     }

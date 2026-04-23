@@ -130,8 +130,13 @@ const getPatientWalletOptimized = async (patientId) => {
 // FIX: Allow multiple records but only 1 ACTIVE (CREATED/WAITING/HAS_RESULT/DIAGNOSED)
 const createNew = async (patientId, data, currentUser) => {
     // Kiểm tra xem có bệnh nhân trong hệ thống không
-    const patient = await userModel.findById(patientId);
+    // patientId là MongoDB ObjectId của patient document (patients collection)
+    const patient = await patientModel.findById(patientId);
     if (!patient) throw new ApiError(StatusCodes.NOT_FOUND, 'Bệnh nhân không tồn tại');
+
+    // Lấy user từ patient để kiểm tra status và lấy wallet
+    const user = await userModel.findById(patient.userId);
+    if (!user) throw new ApiError(StatusCodes.NOT_FOUND, 'Người dùng không tồn tại');
 
     // NEW LOGIC: Check ONLY ACTIVE records (not COMPLETE/REVOKED)
     const activeRecords = await medicalRecordModel.findOneByPatientId(patientId, [
@@ -503,8 +508,8 @@ const getPatientMedicalRecords = async (patientId, statusArray, currentUser) => 
 const updateStatus = async (medicalRecordId, newStatus) => {
     const validTransitions = {
         'CREATED': ['WAITING_RESULT', 'COMPLETE'],
-        'WAITING_RESULT': ['HAS_RESULT', 'COMPLETE'],
-        'HAS_RESULT': ['DIAGNOSED'],
+        'WAITING_RESULT': ['HAS_RESULT'],
+        'HAS_RESULT': ['DIAGNOSED', 'COMPLETE'],
         'DIAGNOSED': ['COMPLETE'],
         'COMPLETE': []
     };

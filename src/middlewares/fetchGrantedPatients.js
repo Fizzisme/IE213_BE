@@ -65,7 +65,7 @@ const fetchGrantedPatients = async (req, res, next) => {
             // Chuyển wallet addresses sang MongoDB ObjectIds
             const patientIds = [];
             for (const walletAddress of patientAddresses) {
-                const user = await userModel.findOne({ walletAddress });
+                const user = await userModel.findOne({ 'authProviders.walletAddress': walletAddress });
                 if (user) {
                     const patient = await patientModel.findOne({ userId: user._id });
                     if (patient) {

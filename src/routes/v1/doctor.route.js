@@ -156,15 +156,20 @@ Router
     *       403:
     *         description: "Doctor không có quyền (chưa được cấp access từ bệnh nhân)"
     */
-   .get(
-      '/medical-records/:medicalRecordId',
-      medicalRecordValidation.medicalRecordId,
-      checkAccessGrant,  // ✅ Check access grant
-      medicalRecordController.getDetail,
-   )
-   /**
-    * @swagger
-    * /v1/doctors/medical-records:
+    .get(
+       '/medical-records/:medicalRecordId',
+       medicalRecordValidation.medicalRecordId,
+       checkAccessGrant,  // ✅ Check access grant
+       medicalRecordController.getDetail,
+    )
+    .get(
+       '/medical-records',
+       fetchGrantedPatients,
+       medicalRecordController.getAll,
+    )
+    /**
+     * @swagger
+     * /v1/doctors/medical-records:
     *   get:
     *     summary: 📑 Lấy danh sách hồ sơ bệnh án (có thể filter theo status)
     *     tags: [DOCTOR - Medical Records]

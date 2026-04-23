@@ -44,13 +44,14 @@ const checkAccessGrant = async (req, res, next) => {
         // Lấy patient user để có walletAddress
         const { userModel } = await import('~/models/user.model');
         const patientUser = await userModel.findById(patient.userId);
-        if (!patientUser || !patientUser.walletAddress) {
+        const patientWallet = patientUser?.authProviders?.find(p => p.walletAddress)?.walletAddress;
+        if (!patientUser || !patientWallet) {
             throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'Patient wallet not configured');
         }
 
         // Kiểm tra blockchain grant (minimum FULL level = 2)
         const hasAccess = await blockchainContracts.read.accessControl.checkAccessLevel(
-            patientUser.walletAddress,
+            patientWallet,
             currentUser.walletAddress,
             2  // FULL minimum
         );
