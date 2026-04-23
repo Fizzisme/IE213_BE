@@ -787,18 +787,13 @@ const cancelLabOrder = async (labOrderId, currentUser, reason = 'Hủy yêu cầ
             throw new ApiError(StatusCodes.FORBIDDEN, 'Chỉ bác sĩ tạo order mới được hủy order này');
         }
 
-        // 2️⃣ Không cho phép cancel nếu đã xong
-        if (labOrder.sampleStatus === 'COMPLETE') {
+        // 2️⃣ Chỉ cho phép cancel ở trạng thái pre-blockchain để tránh lệch state on-chain/off-chain
+        const cancellableStatuses = ['ORDERED', 'CONSENTED'];
+        if (!cancellableStatuses.includes(labOrder.sampleStatus)) {
             throw new ApiError(
                 StatusCodes.CONFLICT,
-                `Không thể cancel order đã COMPLETE`
-            );
-        }
-
-        if (labOrder.sampleStatus === 'CANCELLED') {
-            throw new ApiError(
-                StatusCodes.CONFLICT,
-                `Lab order đã bị cancel`
+                `Không thể cancel order ở trạng thái ${labOrder.sampleStatus}. ` +
+                `Chỉ cho phép ở: ${cancellableStatuses.join(', ')}`
             );
         }
 
@@ -886,6 +881,13 @@ const assignLabOrderToTech = async (currentUser, labOrderId, labTechId) => {
         throw new ApiError(
             StatusCodes.BAD_REQUEST,
             `Chỉ có thể assign order ở trạng thái CONSENTED, hiện tại: ${labOrder.sampleStatus}`
+        );
+    }
+
+    if (labOrder.assignedLabTech) {
+        throw new ApiError(
+            StatusCodes.CONFLICT,
+            'Order đã được assign lab tech và assignment on-chain không thể thay đổi. Vui lòng tạo order mới nếu cần thay lab tech.'
         );
     }
 

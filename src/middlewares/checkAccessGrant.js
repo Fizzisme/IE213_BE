@@ -1,6 +1,6 @@
 import { StatusCodes } from 'http-status-codes';
 import ApiError from '~/utils/ApiError';
-import { accessControl } from '~/services/accessControl.service';
+import { blockchainContracts } from '~/blockchain/contract';
 import { patientModel } from '~/models/patient.model';
 
 /**
@@ -49,7 +49,7 @@ const checkAccessGrant = async (req, res, next) => {
         }
 
         // Kiểm tra blockchain grant (minimum FULL level = 2)
-        const hasAccess = await accessControl.checkAccessLevelFromBlockchain(
+        const hasAccess = await blockchainContracts.read.accessControl.checkAccessLevel(
             patientUser.walletAddress,
             currentUser.walletAddress,
             2  // FULL minimum

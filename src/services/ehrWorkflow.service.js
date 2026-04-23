@@ -4,6 +4,7 @@ import { blockchainContracts } from '~/blockchain/contract';
 import { labOrderModel } from '~/models/labOrder.model';
 import { auditLogModel } from '~/models/auditLog.model';
 import { userModel } from '~/models/user.model';
+import { medicalRecordModel } from '~/models/medicalRecord.model';
 import { medicalRecordService } from '~/services/medicalRecord.service';
 import { AI_SERVICE_URL } from '~/utils/constants';
 import { ethers } from 'ethers';
@@ -1135,7 +1136,6 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
     let syncStatus = 'PENDING';
         if (updatedOrder.relatedMedicalRecordId) {
             try {
-                const { medicalRecordService } = require('./medicalRecord.service');
                 await medicalRecordService.syncConfirmedDiagnosisFromInterpretation(
                     updatedOrder.relatedMedicalRecordId,
                     {
