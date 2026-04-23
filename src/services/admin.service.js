@@ -5,7 +5,7 @@
 // This service handles ADMIN-ONLY privileged operations:
 // createDoctor - Admin directly creates doctor accounts (no PENDING approval)
 // createLabTech - Admin directly creates lab tech accounts (no PENDING approval)
-// registerPatientBlockchain - Admin registers patients on blockchain
+// NOTE: Patient blockchain self-registration đã chuyển sang patient.service
 //
 // NOTE: User management functions (approve, reject, verify, soft-delete) are in
 // adminUserService.js - this follows separation of concerns principle
@@ -172,9 +172,7 @@ const _createLabTechInDB = async ({ email, password, nationId, walletAddress, ad
     }
 }
 
-// FIX: Xóa hàm registerPatientBlockchain cũ — hàm này không làm gì thật
-// (blockchain call đã bị remove, chỉ còn ghi audit log rồi return).
-// prepareRegisterPatientBlockchain + confirmRegisterPatientBlockchain đã thay thế hoàn toàn.
+// Patient blockchain registration flow không còn nằm ở admin service.
 
 const toHexChainId = (chainId) => `0x${Number(chainId).toString(16)}`
 
@@ -411,85 +409,10 @@ const confirmCreateLabTech = async ({ currentUser, txHash, email, password, nati
     }
 }
 
-const prepareRegisterPatientBlockchain = async ({ patientUserId }) => {
-    const patientUser = await userModel.findById(patientUserId)
-    if (!patientUser) {
-        throw new ApiError(StatusCodes.NOT_FOUND, 'Patient user không tồn tại')
-    }
-
-    if (patientUser.role !== userModel.USER_ROLES.PATIENT) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'User này không phải PATIENT')
-    }
-
-    const walletAddress = patientUser.authProviders?.find(p => p.walletAddress)?.walletAddress
-    if (!walletAddress) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Patient không có wallet address')
-    }
-
-    const preparedTx = await metaMaskTxBuilder.prepareRegisterPatientTx(walletAddress)
-
-    return buildPrepareResponse('REGISTER_PATIENT_BLOCKCHAIN', preparedTx, {
-        patientUserId,
-        walletAddress,
-    })
-}
-
-const confirmRegisterPatientBlockchain = async ({ txHash, patientUserId }) => {
-    const patientUser = await userModel.findById(patientUserId)
-    if (!patientUser) {
-        throw new ApiError(StatusCodes.NOT_FOUND, 'Patient user không tồn tại')
-    }
-
-    const walletAddress = patientUser.authProviders?.find(p => p.walletAddress)?.walletAddress
-    if (!walletAddress) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Patient không có wallet address')
-    }
-
-    // registerPatient() dùng msg.sender nên tx phải được ký bởi patient wallet
-    const verification = await verifyConfirmedTxByUser(walletAddress, txHash)
-
-    // registerPatient() không nhận args (dùng msg.sender) nên không cần argsValidator
-    await verifyTxFunctionCall({
-        txHash,
-        contract: blockchainContracts.read.accountManager,
-        functionName: 'registerPatient',
-    })
-
-    // FIX: Wrap try/catch — audit log không được làm fail cả request
-    try {
-        await auditLogModel.createLog({
-            userId: patientUserId,
-            walletAddress,
-            action: 'PATIENT_REGISTER_BLOCKCHAIN',
-            entityType: 'USER',
-            entityId: patientUserId,
-            txHash,
-            status: 'SUCCESS',
-            details: {
-                note: `Patient wallet registered on blockchain via MetaMask`,
-                blockNumber: verification.blockNumber,
-            },
-        })
-    } catch (auditError) {
-        console.error('[Admin] Audit log failed (non-blocking):', auditError.message)
-    }
-
-    return {
-        message: 'Patient successfully registered on blockchain',
-        userId: patientUserId,
-        walletAddress,
-        txHash,
-        blockNumber: verification.blockNumber,
-    }
-}
-
-// FIX: Chỉ export public API — bỏ createDoctor, createLabTech, registerPatientBlockchain
-// khỏi export để tránh bypass blockchain verification từ bên ngoài
+// FIX: Chỉ export public API cho admin operations
 export const adminService = {
     prepareCreateDoctor,
     confirmCreateDoctor,
     prepareCreateLabTech,
     confirmCreateLabTech,
-    prepareRegisterPatientBlockchain,
-    confirmRegisterPatientBlockchain,
 }

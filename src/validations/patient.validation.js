@@ -9,7 +9,12 @@ const createPatientSchema = z.object({
 });
 
 const createPatient = zodValidate(createPatientSchema);
+const confirmRegisterBlockchainSchema = z.object({
+    txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/, 'txHash không hợp lệ'),
+});
+const confirmRegisterBlockchain = zodValidate(confirmRegisterBlockchainSchema);
 
 export const patientValidation = {
     createPatient,
+    confirmRegisterBlockchain,
 };

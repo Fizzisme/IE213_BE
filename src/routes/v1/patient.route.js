@@ -113,4 +113,67 @@ Router.post('/', patientValidation.createPatient, patientController.createPatien
      */
     .get('/me', patientController.getMyProfile);
 
+/**
+ * @swagger
+ * /v1/patients/me/register-blockchain:
+ *   post:
+ *     summary: Patient tự chuẩn bị giao dịch registerPatient() để ký bằng MetaMask
+ *     tags: [Patient]
+ *     security:
+ *       - bearerAuth: []
+ *     description: |
+ *       Trả về transaction request cho hàm `registerPatient()` của AccountManager.
+ *       Vì hàm này dùng `msg.sender`, transaction phải được ký bởi chính ví của patient.
+ *     responses:
+ *       200:
+ *         description: Chuẩn bị giao dịch thành công
+ *       400:
+ *         description: Patient chưa có wallet hợp lệ
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - Không phải PATIENT
+ */
+Router.post('/me/register-blockchain', patientController.prepareRegisterBlockchain);
+
+/**
+ * @swagger
+ * /v1/patients/me/register-blockchain/confirm:
+ *   post:
+ *     summary: Patient xác nhận txHash sau khi ký registerPatient() bằng MetaMask
+ *     tags: [Patient]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - txHash
+ *             properties:
+ *               txHash:
+ *                 type: string
+ *                 example: "0xabc123def456..."
+ *     responses:
+ *       200:
+ *         description: Patient registered on blockchain successfully
+ *       400:
+ *         description: txHash hoặc function call không hợp lệ
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Tx không thuộc wallet của patient hiện tại
+ *       404:
+ *         description: Không tìm thấy transaction data
+ *       409:
+ *         description: Transaction chưa được confirm on-chain
+ */
+Router.post(
+    '/me/register-blockchain/confirm',
+    patientValidation.confirmRegisterBlockchain,
+    patientController.confirmRegisterBlockchain,
+);
+
 export const patientRoute = Router;

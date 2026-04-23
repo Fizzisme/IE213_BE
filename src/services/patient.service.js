@@ -3,6 +3,9 @@ import { patientModel } from '~/models/patient.model';
 import { StatusCodes } from 'http-status-codes';
 import { userModel } from '~/models/user.model';
 import ApiError from '~/utils/ApiError';
+import { ethers } from 'ethers';
+import metaMaskTxBuilder, { verifyTransactionOnBlockchain } from '~/utils/metaMaskTxBuilder';
+import { blockchainContracts } from '~/blockchain/contract';
 
 // Hàm tạo thông tin bệnh nhân
 const createPatient = async (user, payload) => {
@@ -163,6 +166,158 @@ const getMyMedicalRecords = async (user) => {
     };
 };
 
+const toHexChainId = (chainId) => `0x${Number(chainId).toString(16)}`;
+
+const buildPrepareResponse = (action, preparedTx, details = {}) => {
+    const { unsignedTx, chainId, functionSignature } = preparedTx;
+
+    return {
+        message: 'Chuẩn bị giao dịch thành công. Hãy ký bằng ví frontend (MetaMask).',
+        action,
+        txRequest: {
+            to: unsignedTx.to,
+            data: unsignedTx.data,
+            value: unsignedTx.value || '0',
+            chainId: toHexChainId(chainId),
+        },
+        suggestedTx: {
+            from: unsignedTx.from,
+            gasLimit: unsignedTx.gasLimit,
+            gasPrice: unsignedTx.gasPrice,
+            nonce: unsignedTx.nonce,
+        },
+        details: {
+            functionSignature,
+            chainId: Number(chainId),
+            ...details,
+        },
+    };
+};
+
+const verifyConfirmedTxByUser = async (walletAddress, txHash) => {
+    if (!txHash) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu txHash để xác nhận giao dịch');
+    }
+
+    const verification = await verifyTransactionOnBlockchain(txHash);
+    if (!verification.found) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy giao dịch trên blockchain');
+    }
+    if (!verification.confirmed) {
+        throw new ApiError(StatusCodes.CONFLICT, 'Giao dịch chưa được xác nhận trên blockchain');
+    }
+    if (verification.status !== 'SUCCESS') {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch thất bại trên blockchain');
+    }
+
+    if (!verification.from || verification.from.toLowerCase() !== walletAddress.toLowerCase()) {
+        throw new ApiError(
+            StatusCodes.FORBIDDEN,
+            `Giao dịch không thuộc về wallet hiện tại. tx.from=${verification.from}, wallet=${walletAddress}`,
+        );
+    }
+
+    return verification;
+};
+
+const verifyTxFunctionCall = async ({ txHash, contract, functionName }) => {
+    const tx = await blockchainContracts.provider.getTransaction(txHash);
+    if (!tx) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy transaction data');
+    }
+
+    if (!tx.to || tx.to.toLowerCase() !== contract.target.toLowerCase()) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch không gửi tới contract đích');
+    }
+
+    const parsed = contract.interface.parseTransaction({
+        data: tx.data,
+        value: tx.value,
+    });
+
+    if (!parsed || parsed.name !== functionName) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, `Giao dịch không gọi đúng hàm ${functionName}`);
+    }
+};
+
+const prepareRegisterBlockchain = async (currentUser) => {
+    const patientUserId = currentUser?._id;
+    const patientUser = await userModel.findById(patientUserId);
+    if (!patientUser) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Patient user không tồn tại');
+    }
+
+    if (patientUser.role !== userModel.USER_ROLES.PATIENT) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'User này không phải PATIENT');
+    }
+
+    const walletAddress = patientUser.authProviders?.find((p) => p.walletAddress)?.walletAddress;
+    if (!walletAddress || !ethers.isAddress(walletAddress)) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Patient không có wallet address hợp lệ');
+    }
+
+    const preparedTx = await metaMaskTxBuilder.prepareRegisterPatientTx(walletAddress);
+    return buildPrepareResponse('REGISTER_PATIENT_BLOCKCHAIN', preparedTx, {
+        patientUserId,
+        walletAddress,
+    });
+};
+
+const confirmRegisterBlockchain = async (currentUser, txHash) => {
+    const patientUserId = currentUser?._id;
+    const patientUser = await userModel.findById(patientUserId);
+    if (!patientUser) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Patient user không tồn tại');
+    }
+
+    const walletAddress = patientUser.authProviders?.find((p) => p.walletAddress)?.walletAddress;
+    if (!walletAddress || !ethers.isAddress(walletAddress)) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Patient không có wallet address hợp lệ');
+    }
+
+    const verification = await verifyConfirmedTxByUser(walletAddress, txHash);
+    await verifyTxFunctionCall({
+        txHash,
+        contract: blockchainContracts.read.accountManager,
+        functionName: 'registerPatient',
+    });
+
+    await userModel.updateById(patientUserId, {
+        blockchainAccount: {
+            status: 'PENDING',
+            registeredAt: new Date(),
+            txHash,
+            approvalTx: patientUser.blockchainAccount?.approvalTx || null,
+        },
+    });
+
+    try {
+        await auditLogModel.createLog({
+            userId: patientUserId,
+            walletAddress,
+            action: 'PATIENT_REGISTER_BLOCKCHAIN',
+            entityType: 'USER',
+            entityId: patientUserId,
+            txHash,
+            status: 'SUCCESS',
+            details: {
+                note: 'Patient wallet registered on blockchain via MetaMask',
+                blockNumber: verification.blockNumber,
+            },
+        });
+    } catch (auditError) {
+        console.error('[Patient] Audit log failed (non-blocking):', auditError.message);
+    }
+
+    return {
+        message: 'Patient successfully registered on blockchain',
+        userId: patientUserId,
+        walletAddress,
+        txHash,
+        blockNumber: verification.blockNumber,
+    };
+};
+
 export const patientService = {
     createPatient,
     getAll,
@@ -170,4 +325,6 @@ export const patientService = {
     getMyProfile,
     getMyLabOrders,
     getMyMedicalRecords,
+    prepareRegisterBlockchain,
+    confirmRegisterBlockchain,
 };

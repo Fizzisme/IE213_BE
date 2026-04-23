@@ -57,6 +57,32 @@ const getMyMedicalRecords = async (req, res, next) => {
     }
 };
 
+const prepareRegisterBlockchain = async (req, res, next) => {
+    try {
+        const result = await patientService.prepareRegisterBlockchain(req.user);
+        res.status(StatusCodes.OK).json({
+            statusCode: StatusCodes.OK,
+            message: result.message,
+            data: result,
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
+const confirmRegisterBlockchain = async (req, res, next) => {
+    try {
+        const result = await patientService.confirmRegisterBlockchain(req.user, req.body.txHash);
+        res.status(StatusCodes.OK).json({
+            statusCode: StatusCodes.OK,
+            message: result.message,
+            data: result,
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
 export const patientController = {
     createPatient,
     getAll,
@@ -64,4 +90,6 @@ export const patientController = {
     getMyProfile,
     getMyLabOrders,
     getMyMedicalRecords,
+    prepareRegisterBlockchain,
+    confirmRegisterBlockchain,
 };

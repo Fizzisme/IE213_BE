@@ -6,7 +6,7 @@
 // This controller handles ADMIN-ONLY privileged operations:
 // createDoctor - Admin directly creates doctor accounts (no PENDING approval)
 // createLabTech - Admin directly creates lab tech accounts (no PENDING approval)
-// registerPatientBlockchain - Admin registers patients on blockchain
+// Patient blockchain self-registration được xử lý ở patient controller/service
 //
 // NOTE: User management operations (approve, reject, verify, soft-delete) are in
 // adminUserController.js - this follows separation of concerns principle
@@ -95,43 +95,9 @@ const confirmCreateLabTech = async (req, res, next) => {
     }
 };
 
-// POST /admin/patients/:patientId/register-blockchain
-const registerPatientBlockchain = async (req, res, next) => {
-    try {
-        const result = await adminService.prepareRegisterPatientBlockchain({
-            patientUserId: req.params.patientId,
-        });
-        res.status(StatusCodes.OK).json({
-            statusCode: StatusCodes.OK,
-            message: result.message,
-            data: result,
-        });
-    } catch (err) {
-        next(err);
-    }
-};
-
-const confirmRegisterPatientBlockchain = async (req, res, next) => {
-    try {
-        const result = await adminService.confirmRegisterPatientBlockchain({
-            txHash: req.body.txHash,
-            patientUserId: req.params.patientId,
-        });
-        res.status(StatusCodes.OK).json({
-            statusCode: StatusCodes.OK,
-            message: result.message,
-            data: result,
-        });
-    } catch (err) {
-        next(err);
-    }
-};
-
 export const adminController = {
     createDoctor,
     confirmCreateDoctor,
     createLabTech,
     confirmCreateLabTech,
-    registerPatientBlockchain,
-    confirmRegisterPatientBlockchain,
 };
