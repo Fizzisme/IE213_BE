@@ -764,34 +764,38 @@ const postLabResult = async (currentUser, labOrderId, resultData) => {
             });
         }
 
-        // Lưu trạng thái TestResult vào LabOrder
-        await labOrder.save();
+        // // Lưu trạng thái TestResult vào LabOrder
+        // await labOrder.save();
 
-    } catch (testResultError) {
-        // Backup error handler (nên không bao giờ đến đây vì retry helper xử lý)
-        console.error(`[Lab Result] Lỗi bất ngờ khi tạo TestResult: ${testResultError.message}`);
-        labOrder.testResultStatus = TEST_RESULT_STATUS.FAILED;
-        labOrder.testResultError = testResultError.message;
+    } 
+    catch (unexpectedError) {
+        console.error(`[Lab Result] Lỗi bất ngờ khi tạo TestResult:`, unexpectedError.message);
         testResultStatus = TEST_RESULT_STATUS.FAILED;
-        testResultError = testResultError.message;
-        await labOrder.save();
+        testResultError = unexpectedError.message; // ← giờ update đúng variable ngoài
+
+        await labOrderModel.LabOrderModel.findByIdAndUpdate(updatedOrder._id, {
+            $set: {
+                testResultStatus: TEST_RESULT_STATUS.FAILED,
+                testResultError: unexpectedError.message,
+            },
+        });
     }
 
     // 5. Ghi audit log
-    await auditLogModel.createLog({
-        userId: currentUser._id,
-        walletAddress: normalizedLabTechWallet,
-        action: 'POST_LAB_RESULT',
-        entityType: 'LAB_ORDER',
-        entityId: labOrder._id,
-        txHash,
-        status: 'SUCCESS',
-        details: {
-            note: `Lab tech post kết quả cho lab order ${labOrderId}`,
-            recordId,
-            labResultHash,
-        },
-    });
+    // await auditLogModel.createLog({
+    //     userId: currentUser._id,
+    //     walletAddress: normalizedLabTechWallet,
+    //     action: 'POST_LAB_RESULT',
+    //     entityType: 'LAB_ORDER',
+    //     entityId: labOrder._id,
+    //     txHash,
+    //     status: 'SUCCESS',
+    //     details: {
+    //         note: `Lab tech post kết quả cho lab order ${labOrderId}`,
+    //         recordId,
+    //         labResultHash,
+    //     },
+    // });
 
     // [Issue B] Trả về response với testResultStatus + retry info
     // Client sẽ biết:
@@ -1045,15 +1049,15 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
 
     console.log(`[Clinical Interpretation] MongoDB status updated to DOCTOR_REVIEWED`);
 
-    try {
-        await labOrder.save();
-        console.log(`[Clinical Interpretation] MongoDB status updated to DOCTOR_REVIEWED`);
-    } catch (saveError) {
-        throw new ApiError(
-            StatusCodes.INTERNAL_SERVER_ERROR,
-            `CRITICAL: Failed to save to database: ${saveError.message}`
-        );
-    }
+    // try {
+    //     await labOrder.save();
+    //     console.log(`[Clinical Interpretation] MongoDB status updated to DOCTOR_REVIEWED`);
+    // } catch (saveError) {
+    //     throw new ApiError(
+    //         StatusCodes.INTERNAL_SERVER_ERROR,
+    //         `CRITICAL: Failed to save to database: ${saveError.message}`
+    //     );
+    // }
 
     // Step 9: Create audit log
     try {
@@ -1080,32 +1084,31 @@ const addClinicalInterpretation = async (currentUser, labOrderId, interpretation
 
     // Step 10: Auto-sync medical record with confirmed diagnosis
     let syncStatus = 'PENDING';
-    if (labOrder.relatedMedicalRecordId) {
-        try {
-            const { medicalRecordService } = require('./medicalRecord.service');
-            await medicalRecordService.syncConfirmedDiagnosisFromInterpretation(
-                labOrder.relatedMedicalRecordId,
-                {
-                    confirmedDiagnosis,
-                    interpretationHash,
-                    doctorId: currentUser._id,
-                    // NOTE: NO labOrderId needed here
-                    // Relationship already created in Step 3 (Early Binding)
-                }
-            );
-            syncStatus = 'COMPLETED';
-            console.log('Medical record diagnosis synced successfully (relationship existed since Step 3)');
-        } catch (syncErr) {
-            console.error('Sync to medical record FAILED:', syncErr.message);
-            console.error('ℹWill retry later - main flow remains valid');
-            syncStatus = 'FAILED_RETRY_LATER';
-            // DON'T throw - don't fail main flow if sync fails
-        }
+        if (updatedOrder.relatedMedicalRecordId) {
+            try {
+                const { medicalRecordService } = require('./medicalRecord.service');
+                await medicalRecordService.syncConfirmedDiagnosisFromInterpretation(
+                    updatedOrder.relatedMedicalRecordId,
+                    {
+                        confirmedDiagnosis,
+                        interpretationHash,
+                        doctorId: currentUser._id,
+                    }
+                );
+                syncStatus = 'COMPLETED';
+                console.log('Medical record diagnosis synced successfully');
+            } 
+            catch (syncErr) {
+                console.error('Sync to medical record FAILED:', syncErr.message);
+                console.error('Will retry later - main flow remains valid');
+                syncStatus = 'FAILED_RETRY_LATER';
+            }
     }
+
 
     return {
         message: 'Thêm diễn giải lâm sàng thành công',
-        orderId: labOrder._id.toString(),
+        orderId: updatedOrder._id.toString(),
         blockchainRecordId: recordId,
         txHash,
         status: 'DOCTOR_REVIEWED',
@@ -1272,7 +1275,7 @@ const completeRecord = async (currentUser, labOrderId, txHash = null) => {
 
     return {
         message: 'Chốt hồ sơ thành công',
-        orderId: labOrder._id.toString(),
+        orderId: updatedOrder._id.toString(),
         blockchainRecordId: recordId,
         txHash,
         status: 'COMPLETE',

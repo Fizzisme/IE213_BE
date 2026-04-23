@@ -218,7 +218,7 @@ const createLabOrder = async (data, currentUser) => {
 
     // Bắt buộc: medicalRecordId PHẢI được cung cấp (quy tắc bảo mật)
     // Nguyên tắc: Không có hành vi bí ẩn/tự động cho dữ liệu y tế
-    // 🆕 assignedLabTech PHẢI được cung cấp - doctor xác định ai sẽ làm xét nghiệm
+    // assignedLabTech PHẢI được cung cấp - doctor xác định ai sẽ làm xét nghiệm
     if (!patientAddress || !recordType || !medicalRecordId || !assignedLabTech) {
         throw new ApiError(
             StatusCodes.BAD_REQUEST,
@@ -449,10 +449,7 @@ const createLabOrder = async (data, currentUser) => {
     }
 
     // 7. Lưu vào MongoDB để theo dõi
-    // Lấy địa chỉ ví từ DB để tránh bị giả mạo
-    const doctorWalletAddress = await getWalletAddress(currentUser);
-    const normalizedCreatedBy = normalizeWalletAddress(doctorWalletAddress);
-
+    // FIX #4: dùng normalizedDoctorWalletForTx thay vì gọi getWalletAddress() thêm lần nữa
     const labOrderDoc = await labOrderModel.LabOrderModel.create({
         patientAddress: normalizedPatientAddress,  // Từ DB đã xác minh
         patientId: patientId,                       // Từ DB đã xác minh
@@ -472,16 +469,16 @@ const createLabOrder = async (data, currentUser) => {
         // [GHI CHÚC LỤC ĐỎ] Ghi đôi chiều: medicalRecordId được CẬP ĐỊNH bởi bác sĩ (đã xác thực)
         // NO auto-attach - Doctor must choose which record this lab belongs to
         relatedMedicalRecordId: medicalRecordId,  // Đã xác thực ở trên↑
-        // 🆕 assignedLabTech được doctor chỉ định (đã xác thực)
+        // assignedLabTech được doctor chỉ định (đã xác thực)
         assignedLabTech: assignedLabTech,
         // Chỉ lưu MongoDB, không cần IPFS hash
-        createdBy: normalizedCreatedBy,
+        createdBy: normalizedDoctorWalletForTx,
         createdAt: new Date(),
         auditLogs: [
             {
                 from: null,
                 to: 'ORDERED',
-                by: normalizedCreatedBy,
+                by: normalizedDoctorWalletForTx,
                 at: new Date(),
                 txHash,
             },
@@ -491,21 +488,17 @@ const createLabOrder = async (data, currentUser) => {
     // [EXPLICIT LINKING] Link lab order to medical record
     // medicalRecordId came from doctor's explicit choice - no guessing
     // If this fails, patient doesn't lose the lab order, just loses the link
-    //    (but record is locked in validation above, so should not happen)
     try {
         const { medicalRecordModel } = await import('~/models/medicalRecord.model');
 
-        // Ghi đôi chiều đã xác thực, chỉ cần thêm vào mảng
         await medicalRecordModel.MedicalRecordModel.findByIdAndUpdate(
             medicalRecordId,
             { $addToSet: { relatedLabOrderIds: labOrderDoc._id } },
             { new: true }
         );
 
-        console.log(`✅ [EXPLICIT LINK] Lab Order ${labOrderDoc._id} linked to Medical Record ${medicalRecordId}`);
+        console.log(`[EXPLICIT LINK] Lab Order ${labOrderDoc._id} linked to Medical Record ${medicalRecordId}`);
 
-        // 🆕 UPDATE STATUS: Medical Record status = WAITING_RESULT
-        // [SỬA TẬP TRUNG] Sử dụng medicalRecordService.updateStatus() để đảm bảo xác thực nhất quán
         await medicalRecordService.updateStatus(medicalRecordId, 'WAITING_RESULT');
     } catch (linkErr) {
         console.error(`[EXPLICIT LINK] Failed: ${linkErr.message}`);
@@ -513,39 +506,29 @@ const createLabOrder = async (data, currentUser) => {
         // Just log and continue (eventual consistency)
     }
 
-    // 7. Ghi audit log
-    await auditLogModel.createLog({
-        userId: currentUser._id,
-        walletAddress: normalizedCreatedBy,
-        action: 'CREATE_LAB_ORDER',
-        entityType: 'LAB_ORDER',
-        entityId: labOrderDoc._id,
-        txHash,
-        status: 'SUCCESS',
-        details: {
-            note: `Bác sĩ tạo lab order cho bệnh nhân ${patientAddress}`,
-            recordType,
-            recordId,
-            orderHash,
-        },
-    });
-
-    // 7. Ghi audit log
-    await auditLogModel.createLog({
-        userId: currentUser._id,
-        walletAddress: normalizedCreatedBy,
-        action: 'CREATE_LAB_ORDER',
-        entityType: 'LAB_ORDER',
-        entityId: labOrderDoc._id,
-        txHash,
-        status: 'SUCCESS',
-        details: {
-            note: `Bác sĩ tạo lab order cho bệnh nhân ${patientAddress}`,
-            recordType,
-            recordId,
-            orderHash,
-        },
-    });
+    // 8. Ghi audit log
+    // FIX #1: wrap try/catch — audit log không được làm fail cả request
+    // FIX #2: xóa block comment trùng bên dưới
+    // FIX #5: đổi số bước 7 → 8 (bước 7 đã dùng cho MongoDB)
+    try {
+        await auditLogModel.createLog({
+            userId: currentUser._id,
+            walletAddress: normalizedDoctorWalletForTx,
+            action: 'CREATE_LAB_ORDER',
+            entityType: 'LAB_ORDER',
+            entityId: labOrderDoc._id,
+            txHash,
+            status: 'SUCCESS',
+            details: {
+                note: `Bác sĩ tạo lab order cho bệnh nhân ${patientAddress}`,
+                recordType,
+                recordId,
+                orderHash,
+            },
+        });
+    } catch (auditError) {
+        console.error('[Lab Order] Audit log failed (non-blocking):', auditError.message);
+    }
 
     return {
         recordId,

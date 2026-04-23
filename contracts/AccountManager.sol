@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 /*
  * -----------------------------------------------------------------------------
- * AccountManager (V3)
+ * AccountManager (V3 — Fixed)
  * -----------------------------------------------------------------------------
  * Vai trò chính:
  * - Quản lý danh tính on-chain và trạng thái vòng đời tài khoản.
@@ -29,6 +29,10 @@ pragma solidity ^0.8.20;
  * - onlyAdmin kiểm tra msg.sender == admin trực tiếp, đơn giản và rõ ràng.
  * - Không hỗ trợ multi-admin — mở rộng multi-admin là hướng phát triển tương lai.
  * - REJECTED không reactivate trực tiếp — phải đưa về PENDING để tái xét duyệt.
+ *
+ * Changelog (Fixed):
+ * - [FIX #6] requeueAccount: đổi revert AccountNotPending → AccountNotRejected
+ *   để error name đúng với ngữ nghĩa thực tế.
  * -----------------------------------------------------------------------------
  */
 
@@ -57,7 +61,7 @@ contract AccountManager {
     }
 
     // =========================================================================
-    // Custom Errors — tiết kiệm gas hơn require("string")
+    // Custom Errors
     // =========================================================================
 
     error NotAdmin();                  // Người gọi không phải admin
@@ -66,6 +70,7 @@ contract AccountManager {
     error AccountNotFound();           // Tài khoản chưa tồn tại trong hệ thống
     error AccountNotPending();         // Tài khoản không ở trạng thái PENDING
     error AccountNotActive();          // Tài khoản không ở trạng thái ACTIVE
+    error AccountNotRejected();        // [FIX #6] Tài khoản không ở trạng thái REJECTED
     error AccountNotReactivatable();   // Tài khoản không thể kích hoạt lại
     error CannotModifyAdmin();         // Không được sửa/xóa tài khoản admin
     error NewAdminMustBeDifferent();   // Admin mới phải khác admin hiện tại
@@ -87,14 +92,13 @@ contract AccountManager {
     // =========================================================================
 
     /// @notice Địa chỉ admin duy nhất của hệ thống.
-    /// @dev Dùng để kiểm tra nhanh trong onlyAdmin và transferAdmin.
     address public admin;
 
     /// @notice Lưu trữ thông tin tài khoản theo địa chỉ ví.
     mapping(address => Account) private accounts;
 
     // =========================================================================
-    // Events — phục vụ audit trail on-chain
+    // Events
     // =========================================================================
 
     /// @notice Phát ra khi một tài khoản mới được đăng ký hoặc admin thêm nhân sự.
@@ -113,7 +117,7 @@ contract AccountManager {
         uint256 timestamp
     );
 
-    /// @notice Phát ra khi trạng thái tài khoản thay đổi (duyệt, từ chối, vô hiệu hóa...).
+    /// @notice Phát ra khi trạng thái tài khoản thay đổi.
     event StatusChanged(
         address indexed account,
         AccountStatus oldStatus,
@@ -149,7 +153,6 @@ contract AccountManager {
     // =========================================================================
 
     /// @notice Khởi tạo contract, đặt người deploy làm admin đầu tiên.
-    /// @dev Admin được gán role ADMIN và status ACTIVE ngay lập tức.
     constructor() {
         admin = msg.sender;
         accounts[msg.sender] = Account({
@@ -167,10 +170,7 @@ contract AccountManager {
     // =========================================================================
 
     /// @notice Bệnh nhân tự đăng ký tài khoản, chờ admin duyệt.
-    /// @dev Mỗi địa chỉ ví chỉ được đăng ký một lần.
-    ///      Sau khi đăng ký, status=PENDING cho đến khi admin gọi approveAccount().
     function registerPatient() external {
-        // Không cho phép đăng ký lại nếu địa chỉ đã có role
         if (accounts[msg.sender].role != Role.NONE) revert AccountAlreadyExists();
 
         accounts[msg.sender] = Account({
@@ -188,23 +188,20 @@ contract AccountManager {
     // =========================================================================
 
     /// @notice Admin thêm bác sĩ vào hệ thống, kích hoạt ngay lập tức.
-    /// @param doctor Địa chỉ ví của bác sĩ cần thêm.
     function addDoctor(address doctor) external onlyAdmin validAddress(doctor) {
         _assignRoleAndStatus(doctor, Role.DOCTOR, AccountStatus.ACTIVE);
     }
 
     /// @notice Admin thêm kỹ thuật viên xét nghiệm, kích hoạt ngay lập tức.
-    /// @param labTech Địa chỉ ví của lab tech cần thêm.
     function addLabTech(address labTech) external onlyAdmin validAddress(labTech) {
         _assignRoleAndStatus(labTech, Role.LAB_TECH, AccountStatus.ACTIVE);
     }
 
     // =========================================================================
-    // Admin — Quản lý vòng đời tài khoản bệnh nhân
+    // Admin — Quản lý vòng đời tài khoản
     // =========================================================================
 
     /// @notice Admin duyệt tài khoản bệnh nhân đang PENDING → ACTIVE.
-    /// @param account Địa chỉ ví của bệnh nhân cần duyệt.
     function approveAccount(address account) external onlyAdmin validAddress(account) {
         Account storage a = accounts[account];
         if (a.role == Role.NONE)               revert AccountNotFound();
@@ -214,7 +211,6 @@ contract AccountManager {
     }
 
     /// @notice Admin từ chối tài khoản bệnh nhân đang PENDING → REJECTED.
-    /// @param account Địa chỉ ví của bệnh nhân cần từ chối.
     function rejectAccount(address account) external onlyAdmin validAddress(account) {
         Account storage a = accounts[account];
         if (a.role == Role.NONE)               revert AccountNotFound();
@@ -224,19 +220,17 @@ contract AccountManager {
     }
 
     /// @notice Admin đưa tài khoản REJECTED về PENDING để tái xét duyệt.
-    /// @dev REJECTED không thể reactivate trực tiếp — phải qua PENDING trước.
-    /// @param account Địa chỉ ví của tài khoản cần tái xét.
+    /// @dev [FIX #6] Sửa revert AccountNotPending → AccountNotRejected cho đúng ngữ nghĩa.
+    ///      Tài khoản cần phải đang ở REJECTED mới được requeue — không phải PENDING.
     function requeueAccount(address account) external onlyAdmin validAddress(account) {
         Account storage a = accounts[account];
         if (a.role == Role.NONE)                revert AccountNotFound();
-        if (a.status != AccountStatus.REJECTED)  revert AccountNotPending();
+        if (a.status != AccountStatus.REJECTED)  revert AccountNotRejected(); // [FIX #6]
 
         _setStatus(account, AccountStatus.PENDING);
     }
 
     /// @notice Admin vô hiệu hóa tài khoản đang ACTIVE → INACTIVE.
-    /// @dev Không được vô hiệu hóa tài khoản admin.
-    /// @param account Địa chỉ ví cần vô hiệu hóa.
     function deactivateAccount(address account) external onlyAdmin validAddress(account) {
         Account storage a = accounts[account];
         if (a.role == Role.NONE)              revert AccountNotFound();
@@ -247,7 +241,6 @@ contract AccountManager {
     }
 
     /// @notice Admin kích hoạt lại tài khoản đang INACTIVE → ACTIVE.
-    /// @param account Địa chỉ ví cần kích hoạt lại.
     function reactivateAccount(address account) external onlyAdmin validAddress(account) {
         Account storage a = accounts[account];
         if (a.role == Role.NONE)                revert AccountNotFound();
@@ -257,8 +250,6 @@ contract AccountManager {
     }
 
     /// @notice Admin xóa role của nhân sự (doctor, lab tech).
-    /// @dev Không được xóa role của admin — dùng transferAdmin thay thế.
-    /// @param account Địa chỉ ví cần xóa role.
     function removeRole(address account) external onlyAdmin validAddress(account) {
         Account storage a = accounts[account];
         if (a.role == Role.NONE)   revert AccountNotFound();
@@ -280,18 +271,13 @@ contract AccountManager {
     // =========================================================================
 
     /// @notice Chuyển toàn bộ quyền admin sang địa chỉ mới.
-    /// @dev Admin cũ mất quyền ngay lập tức sau khi gọi hàm này.
-    ///      Chỉ admin hiện tại (biến admin) mới được gọi.
-    /// @param newAdmin Địa chỉ ví của admin mới.
     function transferAdmin(address newAdmin) external onlyAdmin validAddress(newAdmin) {
         if (newAdmin == msg.sender) revert NewAdminMustBeDifferent();
 
         address oldAdmin = admin;
 
-        // Gán role ADMIN cho người mới
         _assignRoleAndStatus(newAdmin, Role.ADMIN, AccountStatus.ACTIVE);
 
-        // Thu hồi role admin cũ
         Account storage old = accounts[oldAdmin];
         old.role      = Role.NONE;
         old.status    = AccountStatus.NONE;
@@ -305,15 +291,10 @@ contract AccountManager {
     }
 
     // =========================================================================
-    // Views — Truy vấn thông tin tài khoản
+    // Views
     // =========================================================================
 
     /// @notice Lấy toàn bộ thông tin tài khoản của một địa chỉ.
-    /// @param account Địa chỉ ví cần tra cứu.
-    /// @return role Vai trò hiện tại.
-    /// @return status Trạng thái hiện tại.
-    /// @return createdAt Thời điểm tạo tài khoản.
-    /// @return updatedAt Thời điểm cập nhật gần nhất.
     function getAccount(address account)
         external view
         returns (Role role, AccountStatus status, uint64 createdAt, uint64 updatedAt)
@@ -333,27 +314,24 @@ contract AccountManager {
     }
 
     /// @notice Kiểm tra địa chỉ có phải bác sĩ đang active không.
-    /// @dev Dùng bởi AccessControl và EHRManager để xác thực vai trò.
     function isDoctor(address account) external view returns (bool) {
         Account storage a = accounts[account];
         return a.role == Role.DOCTOR && a.status == AccountStatus.ACTIVE;
     }
 
     /// @notice Kiểm tra địa chỉ có phải lab tech đang active không.
-    /// @dev Dùng bởi EHRManager để kiểm soát thao tác xét nghiệm.
     function isLabTech(address account) external view returns (bool) {
         Account storage a = accounts[account];
         return a.role == Role.LAB_TECH && a.status == AccountStatus.ACTIVE;
     }
 
     /// @notice Kiểm tra địa chỉ có phải bệnh nhân đang active không.
-    /// @dev Dùng bởi EHRManager để xác nhận patient consent.
     function isPatient(address account) external view returns (bool) {
         Account storage a = accounts[account];
         return a.role == Role.PATIENT && a.status == AccountStatus.ACTIVE;
     }
 
-    /// @notice Kiểm tra địa chỉ có phải admin đang active không.
+    /// @notice Kiểm tra địa chỉ có phải admin không.
     function isAdmin(address account) external view returns (bool) {
         return account == admin;
     }
@@ -363,11 +341,6 @@ contract AccountManager {
     // =========================================================================
 
     /// @dev Gán role và status cho một tài khoản.
-    ///      Nếu tài khoản mới (role=NONE): emit AccountRegistered + ghi createdAt.
-    ///      Nếu tài khoản đã tồn tại: emit RoleChanged + StatusChanged để audit.
-    /// @param account Địa chỉ ví cần gán.
-    /// @param newRole Role mới cần gán.
-    /// @param newStatus Status mới cần gán.
     function _assignRoleAndStatus(
         address account,
         Role newRole,
@@ -378,11 +351,9 @@ contract AccountManager {
         AccountStatus oldStatus = a.status;
 
         if (oldRole == Role.NONE) {
-            // Tài khoản hoàn toàn mới — ghi thời điểm tạo
             a.createdAt = uint64(block.timestamp);
             emit AccountRegistered(account, newRole, newStatus, block.timestamp);
         } else {
-            // Tài khoản đã tồn tại — ghi lại thay đổi để audit
             emit RoleChanged(account, oldRole, newRole, block.timestamp);
             emit StatusChanged(account, oldStatus, newStatus, block.timestamp);
         }
@@ -393,8 +364,6 @@ contract AccountManager {
     }
 
     /// @dev Cập nhật trạng thái tài khoản và emit StatusChanged.
-    /// @param account Địa chỉ ví cần cập nhật.
-    /// @param newStatus Trạng thái mới.
     function _setStatus(address account, AccountStatus newStatus) internal {
         Account storage a = accounts[account];
         AccountStatus oldStatus = a.status;

@@ -26,8 +26,13 @@ import { blockchainContracts } from '~/blockchain/contract'
 /**
  * createDoctor - Admin tạo Doctor (Direct)
  * Creates doctor account directly with ACTIVE status (no PENDING approval)
+ *
+ * FIX: Đổi tên thành _createDoctorInDB để thể hiện đây là hàm nội bộ.
+ * Không export — mọi caller từ ngoài phải đi qua confirmCreateDoctor
+ * để đảm bảo blockchain đã được verify trước khi ghi DB.
+ * Đồng thời xóa audit log ở đây vì confirmCreateDoctor đã ghi rồi — tránh duplicate.
  */
-const createDoctor = async ({ email, password, nationId, walletAddress, adminId }) => {
+const _createDoctorInDB = async ({ email, password, nationId, walletAddress, adminId }) => {
     // Kiểm tra email đã tồn tại
     const existingUser = await userModel.UserModel.findOne({
         'authProviders.email': email,
@@ -80,15 +85,6 @@ const createDoctor = async ({ email, password, nationId, walletAddress, adminId 
         status: 'ACTIVE'
     })
 
-    // Ghi audit log
-    await auditLogModel.createLog({
-        userId: adminId,
-        action: 'ADMIN_OVERRIDE',
-        entityType: 'USER',
-        entityId: newUser._id,
-        details: { note: `Admin created DOCTOR account: ${email}`, walletAddress }
-    })
-
     return {
         userId: newUser._id,
         email: email,
@@ -98,7 +94,11 @@ const createDoctor = async ({ email, password, nationId, walletAddress, adminId 
 }
 
 // Admin tạo Lab Tech (Direct)
-const createLabTech = async ({ email, password, nationId, walletAddress, adminId }) => {
+// FIX: Đổi tên thành _createLabTechInDB để thể hiện đây là hàm nội bộ.
+// Không export — mọi caller từ ngoài phải đi qua confirmCreateLabTech
+// để đảm bảo blockchain đã được verify trước khi ghi DB.
+// Đồng thời xóa audit log ở đây vì confirmCreateLabTech đã ghi rồi — tránh duplicate.
+const _createLabTechInDB = async ({ email, password, nationId, walletAddress, adminId }) => {
     // Kiểm tra email đã tồn tại
     const existingUser = await userModel.UserModel.findOne({
         'authProviders.email': email,
@@ -150,15 +150,6 @@ const createLabTech = async ({ email, password, nationId, walletAddress, adminId
         department: ''
     })
 
-    // Ghi audit log
-    await auditLogModel.createLog({
-        userId: adminId,
-        action: 'ADMIN_OVERRIDE',
-        entityType: 'USER',
-        entityId: newUser._id,
-        details: { note: `Admin created LAB_TECH account: ${email}`, walletAddress }
-    })
-
     return {
         userId: newUser._id,
         email: email,
@@ -167,47 +158,9 @@ const createLabTech = async ({ email, password, nationId, walletAddress, adminId
     }
 }
 
-// Admin register patient on blockchain
-const registerPatientBlockchain = async ({ patientUserId, adminId }) => {
-    // Lấy patient user từ DB
-    const patientUser = await userModel.findById(patientUserId)
-    if (!patientUser) {
-        throw new ApiError(StatusCodes.NOT_FOUND, 'Patient user không tồn tại')
-    }
-
-    // Kiểm tra role
-    if (patientUser.role !== userModel.USER_ROLES.PATIENT) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'User này không phải PATIENT')
-    }
-
-    // Lấy wallet address (từ authProviders)
-    const walletAddress = patientUser.authProviders?.find(p => p.walletAddress)?.walletAddress
-    if (!walletAddress) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Patient không có wallet address')
-    }
-
-    // SECURITY: Blockchain registerPatient call removed - no admin private key used at runtime
-    // Patient registration on blockchain should be done via:
-    // 1. Patient self-registration when signing message during wallet login
-    // 2. Admin MetaMask signing (prepare/confirm pattern - to be implemented)
-    // 3. Deployment script for initial setup
-    console.log(`[INFO] Patient ${walletAddress} registered off-chain. Blockchain registration via wallet login or deployment script.`)
-
-    // Ghi audit log
-    await auditLogModel.createLog({
-        userId: adminId,
-        action: 'ADMIN_OVERRIDE',
-        entityType: 'USER',
-        entityId: patientUserId,
-        details: { note: `Admin registered patient on blockchain: ${walletAddress}`, walletAddress }
-    })
-
-    return {
-        message: 'Patient successfully registered on blockchain',
-        userId: patientUserId,
-        walletAddress: walletAddress
-    }
-}
+// FIX: Xóa hàm registerPatientBlockchain cũ — hàm này không làm gì thật
+// (blockchain call đã bị remove, chỉ còn ghi audit log rồi return).
+// prepareRegisterPatientBlockchain + confirmRegisterPatientBlockchain đã thay thế hoàn toàn.
 
 const toHexChainId = (chainId) => `0x${Number(chainId).toString(16)}`
 
@@ -330,7 +283,8 @@ const confirmCreateDoctor = async ({ currentUser, txHash, email, password, natio
         argsValidator: (args) => args?.[0]?.toLowerCase() === walletAddress.toLowerCase(),
     })
 
-    const result = await createDoctor({
+    // FIX: Gọi _createDoctorInDB thay vì createDoctor (đã đổi tên)
+    const result = await _createDoctorInDB({
         email,
         password,
         nationId,
@@ -338,20 +292,26 @@ const confirmCreateDoctor = async ({ currentUser, txHash, email, password, natio
         adminId: currentUser._id,
     })
 
-    await auditLogModel.createLog({
-        userId: currentUser._id,
-        walletAddress: currentUser.walletAddress,
-        action: 'ADMIN_ADD_DOCTOR_BLOCKCHAIN',
-        entityType: 'USER',
-        entityId: result.userId,
-        txHash,
-        status: 'SUCCESS',
-        details: {
-            note: `Admin confirmed addDoctor on blockchain for ${walletAddress}`,
-            walletAddress,
-            email,
-        },
-    })
+    // FIX: Wrap try/catch — audit log không được làm fail cả request
+    // Đây là audit log duy nhất cho action này (_createDoctorInDB không còn ghi nữa)
+    try {
+        await auditLogModel.createLog({
+            userId: currentUser._id,
+            walletAddress: currentUser.walletAddress,
+            action: 'ADMIN_ADD_DOCTOR_BLOCKCHAIN',
+            entityType: 'USER',
+            entityId: result.userId,
+            txHash,
+            status: 'SUCCESS',
+            details: {
+                note: `Admin confirmed addDoctor on blockchain for ${walletAddress}`,
+                walletAddress,
+                email,
+            },
+        })
+    } catch (auditError) {
+        console.error('[Admin] Audit log failed (non-blocking):', auditError.message)
+    }
 
     return {
         message: 'Doctor account created successfully',
@@ -400,7 +360,8 @@ const confirmCreateLabTech = async ({ currentUser, txHash, email, password, nati
         argsValidator: (args) => args?.[0]?.toLowerCase() === walletAddress.toLowerCase(),
     })
 
-    const result = await createLabTech({
+    // FIX: Gọi _createLabTechInDB thay vì createLabTech (đã đổi tên)
+    const result = await _createLabTechInDB({
         email,
         password,
         nationId,
@@ -408,20 +369,26 @@ const confirmCreateLabTech = async ({ currentUser, txHash, email, password, nati
         adminId: currentUser._id,
     })
 
-    await auditLogModel.createLog({
-        userId: currentUser._id,
-        walletAddress: currentUser.walletAddress,
-        action: 'ADMIN_ADD_LABTECH_BLOCKCHAIN',
-        entityType: 'USER',
-        entityId: result.userId,
-        txHash,
-        status: 'SUCCESS',
-        details: {
-            note: `Admin confirmed addLabTech on blockchain for ${walletAddress}`,
-            walletAddress,
-            email,
-        },
-    })
+    // FIX: Wrap try/catch — audit log không được làm fail cả request
+    // Đây là audit log duy nhất cho action này (_createLabTechInDB không còn ghi nữa)
+    try {
+        await auditLogModel.createLog({
+            userId: currentUser._id,
+            walletAddress: currentUser.walletAddress,
+            action: 'ADMIN_ADD_LABTECH_BLOCKCHAIN',
+            entityType: 'USER',
+            entityId: result.userId,
+            txHash,
+            status: 'SUCCESS',
+            details: {
+                note: `Admin confirmed addLabTech on blockchain for ${walletAddress}`,
+                walletAddress,
+                email,
+            },
+        })
+    } catch (auditError) {
+        console.error('[Admin] Audit log failed (non-blocking):', auditError.message)
+    }
 
     return {
         message: 'Lab tech account created successfully',
@@ -464,27 +431,34 @@ const confirmRegisterPatientBlockchain = async ({ txHash, patientUserId }) => {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Patient không có wallet address')
     }
 
+    // registerPatient() dùng msg.sender nên tx phải được ký bởi patient wallet
     const verification = await verifyConfirmedTxByUser(walletAddress, txHash)
 
+    // registerPatient() không nhận args (dùng msg.sender) nên không cần argsValidator
     await verifyTxFunctionCall({
         txHash,
         contract: blockchainContracts.read.accountManager,
         functionName: 'registerPatient',
     })
 
-    await auditLogModel.createLog({
-        userId: patientUserId,
-        walletAddress,
-        action: 'PATIENT_REGISTER_BLOCKCHAIN',
-        entityType: 'USER',
-        entityId: patientUserId,
-        txHash,
-        status: 'SUCCESS',
-        details: {
-            note: `Patient wallet registered on blockchain via MetaMask`,
-            blockNumber: verification.blockNumber,
-        },
-    })
+    // FIX: Wrap try/catch — audit log không được làm fail cả request
+    try {
+        await auditLogModel.createLog({
+            userId: patientUserId,
+            walletAddress,
+            action: 'PATIENT_REGISTER_BLOCKCHAIN',
+            entityType: 'USER',
+            entityId: patientUserId,
+            txHash,
+            status: 'SUCCESS',
+            details: {
+                note: `Patient wallet registered on blockchain via MetaMask`,
+                blockNumber: verification.blockNumber,
+            },
+        })
+    } catch (auditError) {
+        console.error('[Admin] Audit log failed (non-blocking):', auditError.message)
+    }
 
     return {
         message: 'Patient successfully registered on blockchain',
@@ -495,10 +469,9 @@ const confirmRegisterPatientBlockchain = async ({ txHash, patientUserId }) => {
     }
 }
 
+// FIX: Chỉ export public API — bỏ createDoctor, createLabTech, registerPatientBlockchain
+// khỏi export để tránh bypass blockchain verification từ bên ngoài
 export const adminService = {
-    createDoctor,
-    createLabTech,
-    registerPatientBlockchain,
     prepareCreateDoctor,
     confirmCreateDoctor,
     prepareCreateLabTech,
