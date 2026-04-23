@@ -302,7 +302,7 @@ const createLabOrder = async (data, currentUser) => {
         createdAt: new Date().toISOString(),
     };
 
-    // 2. Lưu metadata trực tiếp vào MongoDB (không cần IPFS cho dự án nhỏ)
+    // 2. Lưu metadata trực tiếp vào MongoDB 
     console.log(`[Lab Order] Lưu metadata vào MongoDB cho order: ${metadata.testsRequested.length} xét nghiệm`);
 
     // Tính orderHash = keccak256(metadata JSON)
@@ -320,18 +320,31 @@ const createLabOrder = async (data, currentUser) => {
     if (!labTech) {
         throw new ApiError(StatusCodes.NOT_FOUND, `Không tìm thấy lab tech với ID: ${assignedLabTech}`);
     }
+    // Role ko phải lab_tech thì báo lỗi
     if (labTech.role !== 'LAB_TECH') {
         throw new ApiError(
             StatusCodes.BAD_REQUEST,
             `User ${assignedLabTech} không phải lab tech (role=${labTech.role})`
         );
     }
+    // Nếu lab_tech ko active thì báo lỗi 
     if (labTech.status !== 'ACTIVE') {
         throw new ApiError(
             StatusCodes.BAD_REQUEST,
             `Lab tech ${labTech.name} không hoạt động (status=${labTech.status})`
         );
     }
+    // Lấy wallet address của lab tech
+    const labTechWalletAddress = normalizeWalletAddress(labTech.authProviders?.find(p => p.walletAddress)?.walletAddress);
+    if (!labTechWalletAddress) 
+        {
+            throw new ApiError(
+                StatusCodes.BAD_REQUEST,
+                `Lab tech ${labTech.name} chưa liên kết ví blockchain`
+            );
+        }
+
+
     console.log(`[Lab Order] Lab tech xác thực: ${labTech.name} (${assignedLabTech})`);
 
     const normalizedDoctorWalletForTx = normalizeWalletAddress(currentUser.walletAddress);
@@ -385,7 +398,8 @@ const createLabOrder = async (data, currentUser) => {
             patientAddress,
             recordTypeNum,
             requiredLevel,
-            orderHash
+            orderHash,
+            labTechWalletAddress,
         );
 
         return buildPrepareResponse('CREATE_LAB_ORDER', preparedTx, {
@@ -409,12 +423,15 @@ const createLabOrder = async (data, currentUser) => {
             const argRecordType = Number(args?.[1]);
             const argRequiredLevel = Number(args?.[2]);
             const argOrderHash = args?.[3];
+            const argLabTech = args?.[5]?.toLowerCase(); 
+
 
             return (
                 argPatient === normalizeWalletAddress(patientAddress).toLowerCase()
                 && argRecordType === recordTypeNum
                 && argRequiredLevel === requiredLevel
                 && argOrderHash?.toLowerCase() === orderHash.toLowerCase()
+                && argLabTech === labTechWalletAddress.toLowerCase()
             );
         },
     });
