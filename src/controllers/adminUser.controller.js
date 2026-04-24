@@ -22,12 +22,26 @@ const getUserDetail = async (req, res, next) => {
     }
 };
 
-// PATCH /admin/users/:id/approve
-const approveUser = async (req, res, next) => {
+// POST /v1/admins/users/:id/approve/prepare
+const prepareApproveUser = async (req, res, next) => {
     try {
-        const result = await adminUserService.approveUser({
+        const result = await adminUserService.prepareApproveUser({
             targetUserId: req.params.id,
             adminId: req.user._id,
+        });
+        res.status(StatusCodes.OK).json(result);
+    } catch (err) {
+        next(err);
+    }
+};
+
+// POST /v1/admins/users/:id/approve/confirm
+const confirmApproveUser = async (req, res, next) => {
+    try {
+        const result = await adminUserService.confirmApproveUser({
+            targetUserId: req.params.id,
+            adminId: req.user._id,
+            txHash: req.body.txHash
         });
         res.status(StatusCodes.OK).json(result);
     } catch (err) {
@@ -92,7 +106,8 @@ const verifyIdDocument = async (req, res, next) => {
 export const adminUserController = {
     getUsers,
     getUserDetail,
-    approveUser,
+    prepareApproveUser,
+    confirmApproveUser,
     rejectUser,
     reReviewUser,
     softDeleteUser,

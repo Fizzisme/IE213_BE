@@ -1,12 +1,14 @@
 import express from 'express';
 import { verifyToken } from '~/middlewares/verifyToken';
 import { authorizeRoles } from '~/middlewares/authorizeRoles';
+import { checkActiveStatus } from '~/middlewares/checkActiveStatus';
 import { patientRecordController } from '~/controllers/patientRecord.controller';
 
 const Router = express.Router();
 
 // Tất cả route /patient-records/* đều phải qua verifyToken + PATIENT role
 Router.use(verifyToken, authorizeRoles('PATIENT'));
+Router.use(checkActiveStatus);
 
 /**
  * @swagger

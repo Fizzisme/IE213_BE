@@ -20,21 +20,6 @@
 		"type": "error"
 	},
 	{
-		"inputs": [],
-		"name": "AccountNotPending",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "AccountNotReactivatable",
-		"type": "error"
-	},
-	{
-		"inputs": [],
-		"name": "AccountNotRejected",
-		"type": "error"
-	},
-	{
 		"inputs": [
 			{
 				"internalType": "address",
@@ -64,11 +49,11 @@
 		"inputs": [
 			{
 				"internalType": "address",
-				"name": "account",
+				"name": "patient",
 				"type": "address"
 			}
 		],
-		"name": "approveAccount",
+		"name": "addPatient",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"
@@ -77,6 +62,19 @@
 		"inputs": [],
 		"name": "CannotModifyAdmin",
 		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "account",
+				"type": "address"
+			}
+		],
+		"name": "deactivateAccount",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
 	},
 	{
 		"inputs": [],
@@ -106,12 +104,6 @@
 				"indexed": false,
 				"internalType": "enum AccountManager.Role",
 				"name": "role",
-				"type": "uint8"
-			},
-			{
-				"indexed": false,
-				"internalType": "enum AccountManager.AccountStatus",
-				"name": "status",
 				"type": "uint8"
 			},
 			{
@@ -157,40 +149,7 @@
 				"type": "address"
 			}
 		],
-		"name": "deactivateAccount",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "account",
-				"type": "address"
-			}
-		],
 		"name": "reactivateAccount",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "registerPatient",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "account",
-				"type": "address"
-			}
-		],
-		"name": "rejectAccount",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"
@@ -204,19 +163,6 @@
 			}
 		],
 		"name": "removeRole",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "account",
-				"type": "address"
-			}
-		],
-		"name": "requeueAccount",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"
@@ -338,44 +284,6 @@
 				"internalType": "uint64",
 				"name": "updatedAt",
 				"type": "uint64"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "account",
-				"type": "address"
-			}
-		],
-		"name": "getRole",
-		"outputs": [
-			{
-				"internalType": "enum AccountManager.Role",
-				"name": "",
-				"type": "uint8"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "account",
-				"type": "address"
-			}
-		],
-		"name": "getStatus",
-		"outputs": [
-			{
-				"internalType": "enum AccountManager.AccountStatus",
-				"name": "",
-				"type": "uint8"
 			}
 		],
 		"stateMutability": "view",

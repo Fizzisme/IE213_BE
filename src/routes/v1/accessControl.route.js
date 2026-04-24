@@ -1,12 +1,14 @@
 import express from 'express';
 import { verifyToken } from '~/middlewares/verifyToken';
 import { authorizeRoles } from '~/middlewares/authorizeRoles';
+import { checkActiveStatus } from '~/middlewares/checkActiveStatus';
 import { accessControlController } from '~/controllers/accessControl.controller';
 
 const Router = express.Router();
 
 // Tất cả route /access-control/* đều phải qua verifyToken
 Router.use(verifyToken);
+Router.use(checkActiveStatus);
 
 /**
  * @swagger

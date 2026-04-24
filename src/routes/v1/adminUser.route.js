@@ -97,9 +97,9 @@ Router.get('/users/:id', adminUserController.getUserDetail);
 
 /**
  * @swagger
- * /v1/admins/users/{id}/approve:
- *   patch:
- *     summary: Duyệt user → ACTIVE
+ * /v1/admins/users/{id}/approve/prepare:
+ *   post:
+ *     summary: Chuẩn bị giao dịch duyệt patient (MetaMask prepare)
  *     tags: [Admin]
  *     security:
  *       - bearerAuth: []
@@ -109,20 +109,44 @@ Router.get('/users/:id', adminUserController.getUserDetail);
  *         required: true
  *         schema:
  *           type: string
- *         description: ID của user cần duyệt
+ *         description: ID của patient cần duyệt
  *     responses:
  *       200:
- *         description: User approved successfully
- *       401:
- *         description: Unauthorized - Token không hợp lệ hoặc hết hạn
- *       403:
- *         description: Forbidden - Không phải ADMIN
- *       404:
- *         description: User không tồn tại
- *       409:
- *         description: Conflict - User không ở trạng thái PENDING
+ *         description: Transaction prepared successfully
  */
-Router.patch('/users/:id/approve', adminUserController.approveUser);
+Router.post('/users/:id/approve/prepare', adminUserController.prepareApproveUser);
+
+/**
+ * @swagger
+ * /v1/admins/users/{id}/approve/confirm:
+ *   post:
+ *     summary: Xác nhận duyệt patient sau khi MetaMask ký (addPatient)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID của patient cần duyệt
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - txHash
+ *             properties:
+ *               txHash:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: User approved and registered on-chain
+ */
+Router.post('/users/:id/approve/confirm', adminUserController.confirmApproveUser);
 
 /**
  * @swagger

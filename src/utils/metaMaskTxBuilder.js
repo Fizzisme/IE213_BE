@@ -575,19 +575,14 @@ export const prepareAddLabTechTx = async (adminAddress, labTechAddress) => {
 }
 
 /**
- * prepareRegisterPatientTx
- * Admin đăng ký patient trên blockchain.
- * Contract: AccountManager.registerPatient() — KHÔNG có tham số.
- * [Fix #6] Bỏ patientAddress — registerPatient() dùng msg.sender, không nhận arg.
- *
- * NOTE: Vì registerPatient() dùng msg.sender nên chính patient phải là người ký tx này.
- *       adminAddress ở đây là địa chỉ patient, không phải admin.
- *       Đổi tên tham số cho rõ nghĩa hơn.
+ * prepareAddPatientTx
+ * Admin thêm patient vào hệ thống (ACTIVE ngay lập tức).
+ * Contract: AccountManager.addPatient(patient)
  */
-export const prepareRegisterPatientTx = async (patientAddress) => {
+export const prepareAddPatientTx = async (adminAddress, patientAddress) => {
     try {
-        if (!ethers.isAddress(patientAddress)) {
-            throw new ApiError(StatusCodes.BAD_REQUEST, 'Địa chỉ patient không hợp lệ')
+        if (!ethers.isAddress(adminAddress) || !ethers.isAddress(patientAddress)) {
+            throw new ApiError(StatusCodes.BAD_REQUEST, 'Địa chỉ không hợp lệ')
         }
 
         const accountManager = blockchainContracts.read.accountManager
@@ -595,23 +590,25 @@ export const prepareRegisterPatientTx = async (patientAddress) => {
             throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'AccountManager contract chưa khởi tạo')
         }
 
-        // registerPatient() không có tham số — msg.sender là người ký sẽ tự đăng ký
-        const encodedData = accountManager.interface.encodeFunctionData('registerPatient', [])
+        const encodedData = accountManager.interface.encodeFunctionData('addPatient', [
+            patientAddress,
+        ])
 
         const { unsignedTx, nonce, chainId } = await buildUnsignedTx(
-            patientAddress,
+            adminAddress,
             accountManager.target,
             encodedData,
         )
 
-        console.log(`[prepareRegisterPatientTx] patient=${patientAddress}`)
+        console.log(`[prepareAddPatientTx] admin=${adminAddress}, patient=${patientAddress}`)
 
         return {
             unsignedTx,
             nonce,
             chainId,
             contractAddress: accountManager.target,
-            functionSignature: 'registerPatient()',
+            functionSignature: 'addPatient(address)',
+            patientAddress,
         }
     } catch (err) {
         if (err instanceof ApiError) throw err
@@ -692,7 +689,7 @@ export const metaMaskTxBuilder = {
     // Admin
     prepareAddDoctorTx,
     prepareAddLabTechTx,
-    prepareRegisterPatientTx,
+    prepareAddPatientTx,
     // Verify
     verifyTransactionOnBlockchain,
 }

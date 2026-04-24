@@ -5,6 +5,10 @@ import { patientModel } from '~/models/patient.model';
 import { doctorModel } from '~/models/doctor.model';
 import { labTechModel } from '~/models/labTech.model';
 import ApiError from '~/utils/ApiError';
+import { ethers } from 'ethers';
+import { metaMaskTxBuilder, verifyTransactionOnBlockchain } from '~/utils/metaMaskTxBuilder';
+import { blockchainContracts } from '~/blockchain/contract';
+import { adminModel } from '~/models/admin.model';
 // lấy ra toàn bộ user tồn tại 
 const getUsers = async ({ status, page, limit, deleted }) => {
     if (deleted) {
@@ -20,8 +24,8 @@ const getUserDetail = async (userId) => {
     return user;
 };
 
-// Duyệt user → ACTIVE
-const approveUser = async ({ targetUserId, adminId }) => {
+// Duyệt user → ACTIVE (Prepare)
+const prepareApproveUser = async ({ targetUserId, adminId }) => {
     const user = await userModel.findById(targetUserId);
     if (!user) throw new ApiError(StatusCodes.NOT_FOUND, 'User không tồn tại');
 
@@ -33,13 +37,66 @@ const approveUser = async ({ targetUserId, adminId }) => {
         );
     }
 
-    // Cập nhật status → ACTIVE
+    const patientWallet = user.authProviders?.find(p => p.walletAddress)?.walletAddress;
+    if (!patientWallet) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'User không có địa chỉ ví để đăng ký on-chain');
+    }
+
+    // Lấy ví admin
+    const admin = await adminModel.AdminModel.findOne({ userId: adminId });
+    if (!admin || !admin.walletAddress) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Admin chưa cấu hình địa chỉ ví');
+    }
+
+    // Chuẩn bị transaction addPatient
+    const txData = await metaMaskTxBuilder.prepareAddPatientTx(admin.walletAddress, patientWallet);
+
+    return {
+        message: 'Transaction prepared',
+        targetUserId,
+        patientWallet,
+        ...txData
+    };
+};
+
+// Duyệt user → ACTIVE (Confirm)
+const confirmApproveUser = async ({ targetUserId, adminId, txHash }) => {
+    const user = await userModel.findById(targetUserId);
+    if (!user) throw new ApiError(StatusCodes.NOT_FOUND, 'User không tồn tại');
+
+    if (user.status !== userModel.USER_STATUS.PENDING) {
+        throw new ApiError(StatusCodes.CONFLICT, 'User không ở trạng thái PENDING');
+    }
+
+    const patientWallet = user.authProviders?.find(p => p.walletAddress)?.walletAddress;
+
+    // 1. Verify transaction on blockchain
+    const receipt = await verifyTransactionOnBlockchain(txHash);
+    if (!receipt.confirmed || receipt.status !== 'SUCCESS') {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch chưa thành công hoặc thất bại trên blockchain');
+    }
+
+    // 2. Verify function call (addPatient)
+    const accountManager = blockchainContracts.read.accountManager;
+    const tx = await accountManager.interface.parseTransaction({
+        data: (await blockchainContracts.read.accountManager.provider.getTransaction(txHash)).data
+    });
+
+    if (tx.name !== 'addPatient' || tx.args[0].toLowerCase() !== patientWallet.toLowerCase()) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Nội dung giao dịch không khớp với yêu cầu duyệt patient');
+    }
+
+    // 3. Cập nhật MongoDB
     const updatedUser = await userModel.updateById(targetUserId, {
         status: userModel.USER_STATUS.ACTIVE,
         isActive: true,
         approvedAt: new Date(),
         approvedBy: adminId,
         rejectionReason: null,
+        blockchainAccount: {
+            status: 'ACTIVE',
+            txHash: txHash
+        }
     });
 
     // Ghi audit log
@@ -48,7 +105,7 @@ const approveUser = async ({ targetUserId, adminId }) => {
         action: 'ADMIN_OVERRIDE',
         entityType: 'USER',
         entityId: targetUserId,
-        details: { note: `Admin approved user ${targetUserId}` },
+        details: { note: `Admin approved user ${targetUserId} via blockchain tx ${txHash}` },
     });
 
     return { message: 'User approved successfully', user: updatedUser };
@@ -156,7 +213,8 @@ const softDeleteUser = async ({ targetUserId, adminId }) => {
 export const adminUserService = {
     getUsers,
     getUserDetail,
-    approveUser,
+    prepareApproveUser,
+    confirmApproveUser,
     rejectUser,
     reReviewUser,
     softDeleteUser,

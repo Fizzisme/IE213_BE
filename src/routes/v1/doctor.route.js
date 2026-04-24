@@ -6,11 +6,13 @@ import fetchGrantedPatients from '~/middlewares/fetchGrantedPatients';
 import { medicalRecordController } from '~/controllers/medicalRecord.controller';
 import { medicalRecordValidation } from '~/validations/medicalRecord.validation';
 import { patientController } from '~/controllers/patient.controller';
+import { checkActiveStatus } from '~/middlewares/checkActiveStatus';
 
 const Router = express.Router();
 
 // Tất cả route /doctor/* đều phải qua verifyToken + requireAdmin
 Router.use(verifyToken, authorizeRoles('DOCTOR'));
+Router.use(checkActiveStatus);
 
 /**
  * DOCTOR API - Medical Records Structure

@@ -108,15 +108,17 @@ const verifyWalletLogin = async (walletAddress, signature) => {
     if (!user) {
         user = await userModel.createNew({
             authProviders: [
-                walletAddress && {
+                {
                     type: 'WALLET',
                     walletAddress,
                 },
-            ].filter(Boolean),
+            ],
+            role: userModel.USER_ROLES.PATIENT,
+            status: userModel.USER_STATUS.PENDING,
+            blockchainAccount: {
+                status: 'NONE',
+            },
         });
-
-        // KHÔNG gọi registerPatient() on-chain tại backend.
-        // Patient sẽ tự ký MetaMask qua flow prepare/confirm để đảm bảo non-custodial.
     }
 
     await auditLogModel.createLog({
@@ -127,31 +129,23 @@ const verifyWalletLogin = async (walletAddress, signature) => {
         entityId: user._id,
     });
 
-    // Kiểm tra trạng thái tài khoản trước khi cấp token
-    switch (user.status) {
-        case 'PENDING':
-            throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản đang chờ admin duyệt');
-        case 'REJECTED':
-            throw new ApiError(
-                StatusCodes.FORBIDDEN,
-                `Tài khoản đã bị từ chối. Lý do: ${user.rejectionReason || 'Không rõ'}`,
-            );
-        case 'INACTIVE':
-            throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản đã bị vô hiệu hóa');
-        case 'ACTIVE':
-            // Cho phép đăng nhập bình thường
-            break;
-        default:
-            throw new ApiError(StatusCodes.FORBIDDEN, 'Trạng thái tài khoản không hợp lệ');
+    // Kiểm tra trạng thái tài khoản
+    // [SỬA ĐỔI]: Cho phép PENDING đăng nhập
+    if (user.status === 'REJECTED') {
+        throw new ApiError(
+            StatusCodes.FORBIDDEN,
+            `Tài khoản đã bị từ chối. Lý do: ${user.rejectionReason || 'Không rõ'}`,
+        );
+    }
+    if (user.status === 'INACTIVE') {
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản đã bị vô hiệu hóa');
     }
 
-    // ✅ Thêm walletAddress vào JWT (Cách 2: Hybrid approach)
-    // walletAddress là parameter của function - không cần khai báo lại
-    // Tạo ra thông tin người dùng để mã hóa vào token
+    // ✅ Thêm walletAddress vào JWT
     const userInfo = {
         _id: user._id,
         role: user.role,
-        walletAddress: walletAddress,  // ← Dùng parameter trực tiếp
+        walletAddress: walletAddress,
     };
     // Tạo ra 2 loại token
     const accessToken = await JwtProvider.generateToken(
@@ -197,22 +191,15 @@ const loginByNationId = async (data) => {
         throw new ApiError(StatusCodes.UNAUTHORIZED, 'Sai Mật khẩu');
     }
 
-    // Kiểm tra trạng thái tài khoản trước khi cấp token
-    switch (userExisted.status) {
-        case 'PENDING':
-            throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản đang chờ admin duyệt');
-        case 'REJECTED':
-            throw new ApiError(
-                StatusCodes.FORBIDDEN,
-                `Tài khoản đã bị từ chối. Lý do: ${userExisted.rejectionReason || 'Không rõ'}`,
-            );
-        case 'INACTIVE':
-            throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản đã bị vô hiệu hóa');
-        case 'ACTIVE':
-            // Cho phép đăng nhập bình thường
-            break;
-        default:
-            throw new ApiError(StatusCodes.FORBIDDEN, 'Trạng thái tài khoản không hợp lệ');
+    // [SỬA ĐỔI]: Cho phép PENDING đăng nhập
+    if (userExisted.status === 'REJECTED') {
+        throw new ApiError(
+            StatusCodes.FORBIDDEN,
+            `Tài khoản đã bị từ chối. Lý do: ${userExisted.rejectionReason || 'Không rõ'}`,
+        );
+    }
+    if (userExisted.status === 'INACTIVE') {
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản đã bị vô hiệu hóa');
     }
 
     // ✅ Thêm walletAddress vào JWT (Cách 2: Hybrid approach)
@@ -280,7 +267,8 @@ const refreshAccessToken = async (refreshToken) => {
         throw new ApiError(StatusCodes.FORBIDDEN, 'Account has been deleted');
     }
 
-    if (user.status !== userModel.USER_STATUS.ACTIVE) {
+    // [SỬA ĐỔI]: Cho phép PENDING refresh token
+    if (user.status === 'REJECTED' || user.status === 'INACTIVE') {
         throw new ApiError(
             StatusCodes.FORBIDDEN,
             `Account is ${user.status}. Please contact administrator.`

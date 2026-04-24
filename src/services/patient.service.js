@@ -240,84 +240,6 @@ const verifyTxFunctionCall = async ({ txHash, contract, functionName }) => {
     }
 };
 
-const prepareRegisterBlockchain = async (currentUser) => {
-    const patientUserId = currentUser?._id;
-    const patientUser = await userModel.findById(patientUserId);
-    if (!patientUser) {
-        throw new ApiError(StatusCodes.NOT_FOUND, 'Patient user không tồn tại');
-    }
-
-    if (patientUser.role !== userModel.USER_ROLES.PATIENT) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'User này không phải PATIENT');
-    }
-
-    const walletAddress = patientUser.authProviders?.find((p) => p.walletAddress)?.walletAddress;
-    if (!walletAddress || !ethers.isAddress(walletAddress)) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Patient không có wallet address hợp lệ');
-    }
-
-    const preparedTx = await metaMaskTxBuilder.prepareRegisterPatientTx(walletAddress);
-    return buildPrepareResponse('REGISTER_PATIENT_BLOCKCHAIN', preparedTx, {
-        patientUserId,
-        walletAddress,
-    });
-};
-
-const confirmRegisterBlockchain = async (currentUser, txHash) => {
-    const patientUserId = currentUser?._id;
-    const patientUser = await userModel.findById(patientUserId);
-    if (!patientUser) {
-        throw new ApiError(StatusCodes.NOT_FOUND, 'Patient user không tồn tại');
-    }
-
-    const walletAddress = patientUser.authProviders?.find((p) => p.walletAddress)?.walletAddress;
-    if (!walletAddress || !ethers.isAddress(walletAddress)) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Patient không có wallet address hợp lệ');
-    }
-
-    const verification = await verifyConfirmedTxByUser(walletAddress, txHash);
-    await verifyTxFunctionCall({
-        txHash,
-        contract: blockchainContracts.read.accountManager,
-        functionName: 'registerPatient',
-    });
-
-    await userModel.updateById(patientUserId, {
-        blockchainAccount: {
-            status: 'PENDING',
-            registeredAt: new Date(),
-            txHash,
-            approvalTx: patientUser.blockchainAccount?.approvalTx || null,
-        },
-    });
-
-    try {
-        await auditLogModel.createLog({
-            userId: patientUserId,
-            walletAddress,
-            action: 'PATIENT_REGISTER_BLOCKCHAIN',
-            entityType: 'USER',
-            entityId: patientUserId,
-            txHash,
-            status: 'SUCCESS',
-            details: {
-                note: 'Patient wallet registered on blockchain via MetaMask',
-                blockNumber: verification.blockNumber,
-            },
-        });
-    } catch (auditError) {
-        console.error('[Patient] Audit log failed (non-blocking):', auditError.message);
-    }
-
-    return {
-        message: 'Patient successfully registered on blockchain',
-        userId: patientUserId,
-        walletAddress,
-        txHash,
-        blockNumber: verification.blockNumber,
-    };
-};
-
 export const patientService = {
     createPatient,
     getAll,
@@ -325,6 +247,4 @@ export const patientService = {
     getMyProfile,
     getMyLabOrders,
     getMyMedicalRecords,
-    prepareRegisterBlockchain,
-    confirmRegisterBlockchain,
 };

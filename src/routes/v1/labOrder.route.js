@@ -3,6 +3,7 @@ import { labOrderController } from '~/controllers/labOrder.controller';
 import { ehrWorkflowController } from '~/controllers/ehrWorkflow.controller';
 import { verifyToken } from '~/middlewares/verifyToken';
 import { authorizeRoles } from '~/middlewares/authorizeRoles';
+import { checkActiveStatus } from '~/middlewares/checkActiveStatus';
 
 const Router = express.Router();
 
@@ -147,7 +148,10 @@ const Router = express.Router();
  *       403:
  *         description: Không phải bác sĩ
  */
-Router.post('/', verifyToken, authorizeRoles('DOCTOR'), labOrderController.createLabOrder);
+// Tất cả các nghiệp vụ Lab Order yêu cầu Token hợp lệ VÀ tài khoản phải ACTIVE
+Router.use(verifyToken, checkActiveStatus);
+
+Router.post('/', authorizeRoles('DOCTOR'), labOrderController.createLabOrder);
 
 /**
  * @swagger
@@ -186,7 +190,7 @@ Router.post('/', verifyToken, authorizeRoles('DOCTOR'), labOrderController.creat
  *       409:
  *         description: Giao dịch chưa được xác nhận trên blockchain
  */
-Router.post('/confirm', verifyToken, authorizeRoles('DOCTOR'), labOrderController.confirmCreateLabOrder);
+Router.post('/confirm', authorizeRoles('DOCTOR'), labOrderController.confirmCreateLabOrder);
 
 /**
  * @swagger
@@ -230,7 +234,7 @@ Router.post('/confirm', verifyToken, authorizeRoles('DOCTOR'), labOrderControlle
  *       403:
  *         description: Không phải bệnh nhân sở hữu order này
  */
-Router.patch('/:id/consent', verifyToken, authorizeRoles('PATIENT'), ehrWorkflowController.consentToOrder);
+Router.patch('/:id/consent', authorizeRoles('PATIENT'), ehrWorkflowController.consentToOrder);
 
 /**
  * @swagger
@@ -263,7 +267,7 @@ Router.patch('/:id/consent', verifyToken, authorizeRoles('PATIENT'), ehrWorkflow
  *       409:
  *         description: Giao dịch chưa được xác nhận trên blockchain
  */
-Router.patch('/:id/consent/confirm', verifyToken, authorizeRoles('PATIENT'), ehrWorkflowController.confirmConsentToOrder);
+Router.patch('/:id/consent/confirm', authorizeRoles('PATIENT'), ehrWorkflowController.confirmConsentToOrder);
 
 /**
  * @swagger
@@ -306,7 +310,7 @@ Router.patch('/:id/consent/confirm', verifyToken, authorizeRoles('PATIENT'), ehr
  *       403:
  *         description: Không phải lab tech
  */
-Router.patch('/:id/receive', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflowController.receiveOrder);
+Router.patch('/:id/receive', authorizeRoles('LAB_TECH'), ehrWorkflowController.receiveOrder);
 
 /**
  * @swagger
@@ -339,7 +343,7 @@ Router.patch('/:id/receive', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflo
  *       409:
  *         description: Giao dịch chưa được xác nhận trên blockchain
  */
-Router.patch('/:id/receive/confirm', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflowController.confirmReceiveOrder);
+Router.patch('/:id/receive/confirm', authorizeRoles('LAB_TECH'), ehrWorkflowController.confirmReceiveOrder);
 
 /**
  * @swagger
@@ -404,7 +408,7 @@ Router.patch('/:id/receive/confirm', verifyToken, authorizeRoles('LAB_TECH'), eh
  *       403:
  *         description: Không phải lab tech
  */
-Router.patch('/:id/post-result', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflowController.postLabResult);
+Router.patch('/:id/post-result', authorizeRoles('LAB_TECH'), ehrWorkflowController.postLabResult);
 
 /**
  * @swagger
@@ -439,7 +443,7 @@ Router.patch('/:id/post-result', verifyToken, authorizeRoles('LAB_TECH'), ehrWor
  *       409:
  *         description: Giao dịch chưa được xác nhận trên blockchain
  */
-Router.patch('/:id/post-result/confirm', verifyToken, authorizeRoles('LAB_TECH'), ehrWorkflowController.confirmPostLabResult);
+Router.patch('/:id/post-result/confirm', authorizeRoles('LAB_TECH'), ehrWorkflowController.confirmPostLabResult);
 
 /**
  * @swagger
@@ -513,7 +517,7 @@ Router.patch('/:id/post-result/confirm', verifyToken, authorizeRoles('LAB_TECH')
  *       403:
  *         description: Không phải bác sĩ hoặc không có quyền với bệnh nhân này
  */
-Router.patch('/:id/interpretation', verifyToken, authorizeRoles('DOCTOR'), ehrWorkflowController.addClinicalInterpretation);
+Router.patch('/:id/interpretation', authorizeRoles('DOCTOR'), ehrWorkflowController.addClinicalInterpretation);
 
 /**
  * @swagger
@@ -548,7 +552,7 @@ Router.patch('/:id/interpretation', verifyToken, authorizeRoles('DOCTOR'), ehrWo
  *       409:
  *         description: Giao dịch chưa được xác nhận trên blockchain
  */
-Router.patch('/:id/interpretation/confirm', verifyToken, authorizeRoles('DOCTOR'), ehrWorkflowController.confirmClinicalInterpretation);
+Router.patch('/:id/interpretation/confirm', authorizeRoles('DOCTOR'), ehrWorkflowController.confirmClinicalInterpretation);
 
 /**
  * @swagger
@@ -592,7 +596,7 @@ Router.patch('/:id/interpretation/confirm', verifyToken, authorizeRoles('DOCTOR'
  *       403:
  *         description: Không phải bác sĩ hoặc không có quyền với bệnh nhân này
  */
-Router.patch('/:id/complete', verifyToken, authorizeRoles('DOCTOR'), ehrWorkflowController.completeRecord);
+Router.patch('/:id/complete', authorizeRoles('DOCTOR'), ehrWorkflowController.completeRecord);
 
 /**
  * @swagger
@@ -625,7 +629,7 @@ Router.patch('/:id/complete', verifyToken, authorizeRoles('DOCTOR'), ehrWorkflow
  *       409:
  *         description: Giao dịch chưa được xác nhận trên blockchain
  */
-Router.patch('/:id/complete/confirm', verifyToken, authorizeRoles('DOCTOR'), ehrWorkflowController.confirmCompleteRecord);
+Router.patch('/:id/complete/confirm', authorizeRoles('DOCTOR'), ehrWorkflowController.confirmCompleteRecord);
 
 /**
  * @swagger
@@ -764,7 +768,7 @@ Router.get('/', verifyToken, labOrderController.getLabOrders);
  *       409:
  *         description: Không thể xóa (status != ORDERED)
  */
-Router.delete('/:labOrderId', verifyToken, authorizeRoles('DOCTOR'), labOrderController.deleteLabOrder);
+Router.delete('/:labOrderId', authorizeRoles('DOCTOR'), labOrderController.deleteLabOrder);
 
 /**
  * @swagger
@@ -833,7 +837,7 @@ Router.delete('/:labOrderId', verifyToken, authorizeRoles('DOCTOR'), labOrderCon
  *       409:
  *         description: Không thể hủy (status = COMPLETE hoặc CANCELLED)
  */
-Router.patch('/:labOrderId/cancel', verifyToken, authorizeRoles('DOCTOR'), labOrderController.cancelLabOrder);
+Router.patch('/:labOrderId/cancel', authorizeRoles('DOCTOR'), labOrderController.cancelLabOrder);
 
 /**
  * @swagger
@@ -909,6 +913,6 @@ Router.patch('/:labOrderId/cancel', verifyToken, authorizeRoles('DOCTOR'), labOr
  *       404:
  *         description: Order hoặc lab tech không tìm thấy
  */
-Router.post('/assign', verifyToken, authorizeRoles('DOCTOR'), labOrderController.assignLabOrderToTech);
+Router.post('/assign', authorizeRoles('DOCTOR'), labOrderController.assignLabOrderToTech);
 
 export const labOrderRoute = Router;
