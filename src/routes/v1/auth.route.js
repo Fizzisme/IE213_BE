@@ -1,40 +1,20 @@
 import express from 'express';
 import { authController } from '~/controllers/auth.controller';
 import { authValidation } from '~/validations/auth.validation';
+import { authMiddleware } from '~/middlewares/authMiddleware';
+import { verifyToken } from '~/middlewares/verifyToken';
 
 const Router = express.Router();
 
-/**
- * @swagger
- * /v1/auth/register:
- *   post:
- *     summary: Register new user
- *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               email:
- *                 type: string
- *               password:
- *                 type: string
- *               fullName:
- *                 type: string
- *               phoneNumber:
- *                 type: string
- *               nationId:
- *                  type: string
- *     responses:
- *       204:
- *         description: Success
- */
-Router.post('/register', authValidation.register, authController.register);
-
-//login
-Router.post('/login/nationId', authValidation.loginByNationId, authController.loginByNationId);
-Router.post('/login/wallet', authController.loginByWallet);
+Router
+    // Api user đăng ký
+    .post('/register', authValidation.register, authController.register)
+    // Api
+    .post('/login/nationId', authValidation.loginByNationId, authController.loginByNationId)
+    // Api đăng nhập qua ví
+    .post('/login/wallet', authController.loginByWallet)
+    // Api đăng xuất
+    .delete('/logout', authController.logout)
+    .get('/me', verifyToken, authController.getMe);
 
 export const authRoute = Router;

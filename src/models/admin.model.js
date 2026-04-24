@@ -27,7 +27,7 @@ const adminSchema = new Schema(
 
         permissions: {
             type: [String],
-            default: ['VIEW_AUDIT_LOG', 'VIEW_MEDICAL_RECORD', 'VIEW_HIV_TEST'],
+            default: ['VIEW_AUDIT_LOG', 'VIEW_MEDICAL_RECORD'],
         },
 
         status: {
@@ -56,9 +56,8 @@ const adminSchema = new Schema(
 adminSchema.index({ email: 1 });
 adminSchema.index({ status: 1 });
 
-adminSchema.pre('save', function(next) {
+adminSchema.pre('save', function() {
     this.updatedAt = new Date();
-    next();
 });
 
 const AdminModel = mongoose.model(COLLECTION_NAME, adminSchema);

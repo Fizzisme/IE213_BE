@@ -8,7 +8,8 @@ import { WHITELIST_DOMAINS } from '~/utils/constants';
 import { responseInterceptor } from '~/middlewares/responseInterceptor';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from '~/config/swagger';
-
+import cookieParser from 'cookie-parser';
+import { startAppointmentCron } from './jobs/appointment.cron';
 // Hàm bắt đầu server
 const START_SERVER = async () => {
     // Tạo ra app express
@@ -28,12 +29,17 @@ const START_SERVER = async () => {
 
     // Xử lý req.body json data
     app.use(express.json());
+    app.use(cookieParser());
 
     // Kết nối tới MongoDB
     await connectDB();
 
     // Format lại api response
+    startAppointmentCron();
     app.use(responseInterceptor);
+
+    // Sử dụng để lấy biến được lưu trong cookie
+    app.use(cookieParser());
 
     // Sử dụng APIs_V1
     app.use('/v1', APIs_V1);
@@ -51,8 +57,8 @@ const START_SERVER = async () => {
         res.end('<h1>Hello World!</h1><hr>');
     });
 
-    app.listen(PORT, HOST, () => {
-        console.log(`✅ Server is running at http://${HOST}:${PORT}/`);
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log(`Server is running on http://0.0.0.0:${PORT}`);
     });
 };
 

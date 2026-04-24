@@ -1,0 +1,31 @@
+services:
+  api:
+    build:
+      context: .
+      target: production
+    image: ehr-api:v1.0.0
+    container_name: ehr_api_prod
+    ports:
+      - "1306:1306"
+    environment:
+      - NODE_ENV=production
+      - PORT=1306
+      # Khai báo các biến môi trường khác, hoặc sử dụng env_file
+    env_file:
+      - .env.production
+    restart: unless-stopped
+
+    # Cấu hình Healthcheck để theo dõi trạng thái ứng dụng
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:1306/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+    # Quản lý log tập trung để không làm sập server do full disk
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

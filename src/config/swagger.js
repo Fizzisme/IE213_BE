@@ -1,4 +1,7 @@
 import swaggerJsdoc from 'swagger-jsdoc';
+import { env } from '~/config/environment';
+
+const PORT = env.APP_PORT || 8017;
 
 // Config swagger
 const options = {
@@ -11,12 +14,21 @@ const options = {
         },
         servers: [
             {
-                url: 'http://localhost:8017',
+                url: `http://localhost:${PORT}`,
                 description: 'Local server',
             },
         ],
+        components: {
+            securitySchemes: {
+                bearerAuth: {
+                    type: 'http',
+                    scheme: 'bearer',
+                    bearerFormat: 'JWT',
+                },
+            },
+        },
     },
-    apis: ['./src/routes/**/*.js'],
+    apis: ['./src/swagger/**/*.js'],
 };
 
 export const swaggerSpec = swaggerJsdoc(options);
