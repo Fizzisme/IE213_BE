@@ -62,17 +62,17 @@
 
 ### 2.1 Đăng ký (Dành riêng cho Bệnh nhân)
 
-> ⚠️ **Lưu ý quan trọng:** Hệ thống đã chuyển sang mô hình đăng ký tự phục vụ cho Bệnh nhân. API đăng ký chung trước đây (`/v1/auth/register`) hiện chỉ áp dụng cho role **PATIENT**. Các role Bác sĩ và Lab Tech sẽ do Admin tạo trực tiếp.
+> ⚠️ **Lưu ý quan trọng:** Hệ thống áp dụng mô hình "Ví là Danh tính". Bệnh nhân chỉ cần cung cấp `walletAddress` để đăng ký. Các trường thông tin khác là tùy chọn. Các role Bác sĩ và Lab Tech sẽ do Admin tạo trực tiếp.
 
 ```http
 POST /v1/auth/register
 Content-Type: application/json
 
 {
-  "email": "patient@example.com",
-  "password": "SecurePass@123456",
-  "nationId": "123456789012",
-  "walletAddress": "0xED95a81E6aB6bd4e42B267BFC4578533CCfA9fEB"
+  "walletAddress": "0xED95a81E6aB6bd4e42B267BFC4578533CCfA9fEB",
+  "email": "patient@example.com", (tùy chọn)
+  "password": "SecurePass@123456", (tùy chọn)
+  "nationId": "123456789012" (tùy chọn)
 }
 ```
 
@@ -81,7 +81,7 @@ Content-Type: application/json
 {
   "userId": "507f1f77bcf86cd799439011",
   "walletAddress": "0xED95a81E6aB6bd4e42B267BFC4578533CCfA9fEB",
-  "blockchainStatus": "PENDING"
+  "blockchainStatus": "NONE"
 }
 ```
 
@@ -345,25 +345,25 @@ POST /v1/auth/register
 **Body:**
 ```json
 {
-  "email": "patient@example.com",
-  "password": "SecurePass@123456",
-  "nationId": "123456789012",
-  "walletAddress": "0xED95a81E6aB6bd4e42B267BFC4578533CCfA9fEB"
+  "walletAddress": "0xED95a81E6aB6bd4e42B267BFC4578533CCfA9fEB",
+  "email": "patient@example.com", (tùy chọn)
+  "password": "SecurePass@123456", (tùy chọn)
+  "nationId": "123456789012" (tùy chọn)
 }
 ```
 
 **Validation:**
-- `email`: unique, format email
-- `password`: tối thiểu 8 ký tự
-- `nationId`: 9 hoặc 12 chữ số
-- `walletAddress`: `0x` + 40 ký tự hex, không được là zero address
+- `walletAddress`: `0x` + 40 ký tự hex (BẮT BUỘC)
+- `email`: tùy chọn, format email
+- `password`: tùy chọn, tối thiểu 8 ký tự
+- `nationId`: tùy chọn, 9 hoặc 12 chữ số
 
 **Response 201:**
 ```json
 {
   "userId": "507f1f77bcf86cd799439011",
   "walletAddress": "0xED95a81E6aB6bd4e42B267BFC4578533CCfA9fEB",
-  "blockchainStatus": "PENDING"
+  "blockchainStatus": "NONE"
 }
 ```
 
@@ -493,13 +493,35 @@ Authorization: Bearer <adminToken>
 
 #### Màn hình: Duyệt / Từ chối user
 
-**Duyệt:**
+**Duyệt (Prepare):**
 ```http
-PATCH /v1/admins/users/:id/approve
+POST /v1/admins/users/:id/approve/prepare
 Authorization: Bearer <adminToken>
 ```
 
-**Response 200:**
+**Response 200 (Prepare):**
+```json
+{
+  "message": "Transaction prepared",
+  "txRequest": {
+    "to": "0xAccountManager...",
+    "data": "0x...",
+    "chainId": "0xaa36a7",
+    ...
+  }
+}
+```
+
+**Duyệt (Confirm):**
+```http
+POST /v1/admins/users/:id/approve/confirm
+Authorization: Bearer <adminToken>
+Content-Type: application/json
+
+{ "txHash": "0xabc123..." }
+```
+
+**Response 200 (Confirm):**
 ```json
 {
   "message": "Người dùng được duyệt thành công",
@@ -613,29 +635,6 @@ Content-Type: application/json
 ```
 
 **Tạo Lab Tech:** Tương tự, dùng `POST /v1/admins/users/create-labtech` và `.../confirm`.
-
----
-
-#### Màn hình: Đăng ký Patient trên blockchain
-
-**Prepare:**
-```http
-POST /v1/patients/me/register-blockchain
-Authorization: Bearer <patientToken>
-```
-
-> ⚠️ **Lưu ý quan trọng:** `registerPatient()` dùng `msg.sender`, nên transaction này phải được **ký bởi chính wallet của PATIENT**.
-
-**Confirm:**
-```http
-POST /v1/patients/me/register-blockchain/confirm
-Authorization: Bearer <patientToken>
-Content-Type: application/json
-
-{ "txHash": "0xabc123def456..." }
-```
-
-> Admin vẫn giữ flow duyệt user `PENDING -> ACTIVE` độc lập. Blockchain registration của patient không thay thế bước duyệt này.
 
 ---
 
@@ -1911,11 +1910,12 @@ POST   /v1/admins/auth/login
 
 GET    /v1/admins/users?status=&page=&limit=  → Danh sách user
 GET    /v1/admins/users/:id                    → Chi tiết user
-PATCH  /v1/admins/users/:id/approve            → Duyệt user
-PATCH  /v1/admins/users/:id/reject             → Từ chối user
-PATCH  /v1/admins/users/:id/re-review          → Phục hồi xét duyệt
+POST   /v1/admins/users/:id/approve/prepare    → Duyệt user (prepare)
+POST   /v1/admins/users/:id/approve/confirm    → Duyệt user (confirm)
+PATCH  /v1/admins/users/:id/reject             → Từ chối user (off-chain)
+PATCH  /v1/admins/users/:id/re-review          → Phục hồi xét duyệt (off-chain)
 PATCH  /v1/admins/users/:id/verify-id          → Verify CMND
-PATCH  /v1/admins/users/:id/soft-delete        → Xóa mềm
+PATCH  /v1/admins/users/:id/soft-delete        → Xóa mềm (off-chain)
 
 POST   /v1/admins/users/create-doctor          → Tạo bác sĩ prepare
 POST   /v1/admins/users/create-doctor/confirm   → Tạo bác sĩ confirm
@@ -1927,12 +1927,6 @@ GET    /v1/blockchain/audit-logs?page=&limit=
 GET    /v1/blockchain/audit-logs/entity/:entityType/:entityId
 GET    /v1/blockchain/audit-logs/me
 GET    /v1/blockchain/audit-logs/my-access-history
-```
-
-#### Patient Blockchain Self-Service APIs
-```
-POST   /v1/patients/me/register-blockchain          → Register blockchain prepare (patient signs)
-POST   /v1/patients/me/register-blockchain/confirm  → Register blockchain confirm
 ```
 
 #### Common APIs (tất cả roles)

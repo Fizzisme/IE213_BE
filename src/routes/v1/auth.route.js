@@ -12,10 +12,10 @@ const Router = express.Router();
  *     summary: Register new Patient account
  *     tags: [Auth]
  *     description: |
- *       Đăng ký tài khoản Bệnh nhân mới. Bắt buộc phải có walletAddress.
+ *       Đăng ký tài khoản Bệnh nhân mới bằng ví MetaMask.
  *       Bác sĩ và Kỹ thuật viên Lab được Admin tạo trực tiếp, không qua registration công khai.
  *       Sau khi đăng ký, status = PENDING, chờ admin duyệt.
- *       Email và wallet phải là unique (không duplicate).
+ *       Các trường email, password, nationId không còn bắt buộc (optional).
  *     requestBody:
  *       required: true
  *       content:
@@ -23,26 +23,23 @@ const Router = express.Router();
  *           schema:
  *             type: object
  *             required:
- *               - email
- *               - password
- *               - nationId
  *               - walletAddress
  *             properties:
  *               email:
  *                 type: string
  *                 format: email
  *                 example: "patient@hospital.com"
- *                 description: Email người dùng (phải unique)
+ *                 description: Email người dùng (optional)
  *               password:
  *                 type: string
  *                 minLength: 8
  *                 example: "password123"
- *                 description: Mật khẩu (tối thiểu 8 ký tự)
+ *                 description: Mật khẩu (optional)
  *               nationId:
  *                 type: string
  *                 pattern: '^\d{9}|\d{12}$'
  *                 example: "123456789"
- *                 description: CCCD/CMND (9 hoặc 12 chữ số)
+ *                 description: CCCD/CMND (optional)
  *               walletAddress:
  *                 type: string
  *                 pattern: '^0x[a-fA-F0-9]{40}$'
