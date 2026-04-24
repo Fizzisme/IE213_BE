@@ -14,8 +14,12 @@ const options = {
         },
         servers: [
             {
-                url: [`http://localhost:${PORT}`, `http://62.72.46.7:${PORT}`],
-                description: 'Local server',
+                url: `http://localhost:${PORT}`,
+                description: 'Local development server',
+            },
+            {
+                url: `http://62.72.46.7:${PORT}`,
+                description: 'VPS Production server',
             },
         ],
         components: {
