@@ -83,7 +83,7 @@ const createNew = async (medicalRecordId, body, currentUser) => {
         entityId: testResult._id,
         details: { note: `Lab tech create test result id:${testResult._id}` },
     });
-    return 'Tạo kết quả xét nghiệm thành công';
+    return { createdAt: testResult.createdAt };
 };
 
 const getDetail = async (testResultId) => {
