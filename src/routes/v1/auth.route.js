@@ -15,6 +15,9 @@ Router
     .post('/login/wallet', authController.loginByWallet)
     // Api đăng xuất
     .delete('/logout', authController.logout)
-    .get('/me', verifyToken, authController.getMe);
+    // Api lấy thông tin user
+    .get('/me', verifyToken, authController.getMe)
+    // Api refresh token
+    .post('/refresh-token', authController.refreshToken);
 
 export const authRoute = Router;

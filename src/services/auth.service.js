@@ -209,10 +209,53 @@ const getMe = async (user) => {
     };
 };
 
+const refreshToken = async (refreshTokenValue) => {
+    if (!refreshTokenValue) {
+        throw new ApiError(StatusCodes.UNAUTHORIZED, 'Refresh token không được cung cấp');
+    }
+
+    try {
+        const decoded = await JwtProvider.verifyToken(refreshTokenValue, env.REFRESH_TOKEN_SECRET_SIGNATURE);
+
+        const user = await userModel.findById(decoded._id);
+        if (!user) {
+            throw new ApiError(StatusCodes.UNAUTHORIZED, 'Người dùng không tồn tại');
+        }
+
+        if (user.status !== 'ACTIVE') {
+            throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản không hoạt động');
+        }
+
+        const userInfo = {
+            _id: user._id,
+            role: user.role,
+        };
+
+        const newAccessToken = await JwtProvider.generateToken(
+            userInfo,
+            env.ACCESS_TOKEN_SECRET_SIGNATURE,
+            env.ACCESS_TOKEN_LIFE,
+        );
+
+        return {
+            accessToken: newAccessToken,
+        };
+    } catch (error) {
+        if (error.name === 'TokenExpiredError') {
+            throw new ApiError(StatusCodes.UNAUTHORIZED, 'Refresh token đã hết hạn, vui lòng đăng nhập lại');
+        }
+        if (error.name === 'JsonWebTokenError') {
+            throw new ApiError(StatusCodes.UNAUTHORIZED, 'Refresh token không hợp lệ');
+        }
+        throw error;
+    }
+};
+
 export const authService = {
     register,
     loginByNationId,
     createWalletNonce,
     verifyWalletLogin,
     getMe,
+    refreshToken,
 };

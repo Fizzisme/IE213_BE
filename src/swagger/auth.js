@@ -106,3 +106,92 @@
  *       500:
  *         description: Lỗi server
  */
+
+/**
+ * @swagger
+ * /v1/auth/me:
+ *   get:
+ *     summary: Lấy thông tin người dùng hiện tại
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lấy thông tin thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 statusCode:
+ *                   type: number
+ *                   example: 200
+ *                 message:
+ *                   type: string
+ *                   example: Success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     userId:
+ *                       type: string
+ *                       example: "69ba902193958774013b93e9"
+ *                     role:
+ *                       type: string
+ *                       enum: [PATIENT, DOCTOR, ADMIN]
+ *                       example: "PATIENT"
+ *                     status:
+ *                       type: string
+ *                       enum: [PENDING, ACTIVE, REJECTED, INACTIVE]
+ *                       example: "ACTIVE"
+ *                     hasProfile:
+ *                       type: boolean
+ *                       example: true
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Không tìm thấy người dùng
+ *       500:
+ *         description: Lỗi server
+ */
+
+/**
+ * @swagger
+ * /v1/auth/refresh-token:
+ *   post:
+ *     summary: Làm mới accessToken khi hết hạn
+ *     tags: [Auth]
+ *     description: Gửi refreshToken từ cookie để lấy accessToken mới. Refresh token có hạn 14 ngày.
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Làm mới token thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 statusCode:
+ *                   type: number
+ *                   example: 200
+ *                 message:
+ *                   type: string
+ *                   example: Success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     accessToken:
+ *                       type: string
+ *                       description: JWT access token mới, hạn 9 giờ
+ *                       example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *       401:
+ *         description: Refresh token không tồn tại, hết hạn hoặc không hợp lệ
+ *       403:
+ *         description: Tài khoản không hoạt động
+ *       500:
+ *         description: Lỗi server
+ */
