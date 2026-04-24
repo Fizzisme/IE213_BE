@@ -14,7 +14,7 @@ const options = {
         },
         servers: [
             {
-                url: `http://localhost:${PORT}`,
+                url: [`http://localhost:${PORT}`, `http://62.72.46.7:${PORT}`],
                 description: 'Local server',
             },
         ],
