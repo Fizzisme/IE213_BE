@@ -795,7 +795,6 @@ Content-Type: application/json
 
 {
   "recordId": "1",
-  "computedHash": "0xabc123def456789...",
   "hashType": 1
 }
 ```
@@ -804,7 +803,13 @@ Content-Type: application/json
 
 **Response 200:**
 ```json
-{ "isValid": true }
+{
+  "isValid": true,
+  "recordId": "1",
+  "hashType": 1,
+  "offChainHash": "0xabc...",
+  "note": "Dữ liệu Off-chain khớp hoàn toàn với Blockchain"
+}
 ```
 
 ---

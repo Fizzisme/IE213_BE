@@ -109,21 +109,55 @@ const updateMyProfile = async (userId, updateData) => {
         throw new ApiError(StatusCodes.UNAUTHORIZED, 'User not authenticated');
     }
 
-    // Only allow updating these fields
-    const allowedFields = ['fullName', 'phone', 'avatar'];
-    const updatePayload = {};
+    const user = await userModel.findById(userId);
+    if (!user) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
+    }
 
-    for (const field of allowedFields) {
+    // 1. Cập nhật thông tin cơ bản (User model)
+    const allowedUserFields = ['fullName', 'phone', 'avatar'];
+    const userUpdatePayload = {};
+
+    for (const field of allowedUserFields) {
         if (field in updateData) {
-            updatePayload[field] = updateData[field];
+            userUpdatePayload[field] = updateData[field];
         }
     }
 
-    const updated = await userModel.updateById(userId, updatePayload);
-
-    if (!updated) {
-        throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
+    if (Object.keys(userUpdatePayload).length > 0) {
+        await userModel.updateById(userId, userUpdatePayload);
     }
+
+    // 2. Cập nhật thông tin chuyên biệt (Role-specific profile)
+    if (user.role === userModel.USER_ROLES.PATIENT) {
+        const allowedPatientFields = ['gender', 'dob']; // Frontend gửi 'dob' thay vì 'birthYear'
+        const patientUpdatePayload = {};
+
+        if ('gender' in updateData) patientUpdatePayload.gender = updateData.gender;
+        if ('dob' in updateData) patientUpdatePayload.birthYear = updateData.dob;
+
+        if (Object.keys(patientUpdatePayload).length > 0) {
+            let patient = await patientModel.findByUserId(userId);
+            if (patient) {
+                await patientModel.PatientModel.findByIdAndUpdate(patient._id, patientUpdatePayload);
+            } else {
+                // Tự động tạo profile nếu chưa có (đảm bảo hasProfile)
+                await patientModel.createNew({
+                    userId,
+                    ...patientUpdatePayload
+                });
+                await userModel.updateById(userId, { hasProfile: true });
+            }
+        }
+    }
+
+    // Ghi log hành động
+    await auditLogModel.createLog({
+        userId,
+        action: 'UPDATE_PATIENT_PROFILE',
+        entityType: 'USER',
+        entityId: userId,
+    });
 
     return await getMyProfile(userId);
 };

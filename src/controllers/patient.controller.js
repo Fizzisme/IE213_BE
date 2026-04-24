@@ -3,10 +3,10 @@
 import { StatusCodes } from 'http-status-codes';
 import { patientService } from '~/services/patient.service';
 
-const createPatient = async (req, res, next) => {
+const updateMyProfile = async (req, res, next) => {
     try {
-        const result = await patientService.createPatient(req.user, req.body);
-        res.status(StatusCodes.CREATED).json(result);
+        const result = await patientService.updateMyProfile(req.user, req.body);
+        res.status(StatusCodes.OK).json(result);
     } catch (err) {
         next(err);
     }
@@ -58,7 +58,7 @@ const getMyMedicalRecords = async (req, res, next) => {
 };
 
 export const patientController = {
-    createPatient,
+    updateMyProfile,
     getAll,
     getPatientById,
     getMyProfile,

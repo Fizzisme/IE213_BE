@@ -1,15 +1,7 @@
 import { authService } from '~/services/auth.service';
 import { StatusCodes } from 'http-status-codes';
 import ms from 'ms';
-// Controller đăng ký local
-const register = async (req, res, next) => {
-    try {
-        const result = await authService.register(req.body);
-        res.status(StatusCodes.CREATED).json(result);
-    } catch (err) {
-        next(err);
-    }
-};
+
 // Controller đăng nhập bằng nationId
 const loginByNationId = async (req, res, next) => {
     try {
@@ -107,7 +99,6 @@ const refreshAccessToken = async (req, res, next) => {
 };
 
 export const authController = {
-    register,
     loginByWallet,
     loginByNationId,
     logout,

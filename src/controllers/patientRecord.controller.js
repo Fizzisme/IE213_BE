@@ -9,17 +9,12 @@ import { patientRecordService } from '~/services/patientRecord.service';
  *       type: object
  *       required:
  *         - recordId
- *         - computedHash
  *         - hashType
  *       properties:
  *         recordId:
  *           type: string
  *           description: ID của record trên blockchain
  *           example: "1"
- *         computedHash:
- *           type: string
- *           description: Hash tính từ dữ liệu IPFS
- *           example: "0x123..."
  *         hashType:
  *           type: number
  *           description: "Loại hash: 0 = orderHash, 1 = labResultHash, 2 = interpretationHash"
@@ -49,8 +44,9 @@ const getRecordDetail = async (req, res, next) => {
 // Verify hash của record
 const verifyRecordHash = async (req, res, next) => {
     try {
-        const { recordId, computedHash, hashType } = req.body;
-        const result = await patientRecordService.verifyRecordHash(req.user, recordId, computedHash, hashType);
+        const { recordId, hashType } = req.body;
+        // Backend tự lấy hash từ Off-chain Database để đối chiếu với Blockchain
+        const result = await patientRecordService.verifyRecordHash(req.user, recordId, hashType);
         res.status(StatusCodes.OK).json(result);
     } catch (e) {
         next(e);

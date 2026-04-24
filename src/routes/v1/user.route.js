@@ -2,6 +2,7 @@
 import express from 'express';
 import { verifyToken } from '~/middlewares/verifyToken';
 import { userController } from '~/controllers/user.controller';
+import { checkActiveStatus } from '~/middlewares/checkActiveStatus';
 
 const Router = express.Router();
 
@@ -142,7 +143,7 @@ Router.get('/me', userController.getMyProfile);
  *       404:
  *         description: Not Found - User không tồn tại
  */
-Router.patch('/me', userController.updateMyProfile);
+Router.patch('/me', checkActiveStatus, userController.updateMyProfile);
 
 /**
  * @swagger

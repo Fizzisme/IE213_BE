@@ -9,73 +9,6 @@ import { JwtProvider } from '~/providers/JwtProvider';
 import { StatusCodes } from 'http-status-codes';
 import ApiError from '~/utils/ApiError';
 import { blockchainContracts } from '~/blockchain/contract';
-// Hàm đăng ký local
-const register = async (payload) => {
-    // ✅ VALIDATION: Require walletAddress for patient registration
-    if (!payload.walletAddress) {
-        throw new ApiError(StatusCodes.BAD_REQUEST,
-            'Wallet address is required for patient registration. Please provide a valid Ethereum wallet address.');
-    }
-
-    // ✅ VALIDATION: Validate wallet address format
-    if (!ethers.isAddress(payload.walletAddress)) {
-        throw new ApiError(StatusCodes.BAD_REQUEST,
-            'Invalid wallet address format. Expected 0x prefixed 40-character hex string.');
-    }
-
-    // ✅ VALIDATION: Prevent zero address
-    if (payload.walletAddress.toLowerCase() === '0x0000000000000000000000000000000000000000') {
-        throw new ApiError(StatusCodes.BAD_REQUEST,
-            'Cannot use zero address as wallet. Please provide a valid wallet address.');
-    }
-
-    // Tìm người dùng trong DB
-    const userExisted = await userModel.findByNationId(payload.nationId);
-    // Nếu người dùng tồn tại thì ném ra lỗi
-    if (userExisted) throw new ApiError(StatusCodes.NOT_ACCEPTABLE, 'Người dùng đã tồn tại');
-
-    // ✅ VALIDATION: Check if wallet already registered
-    const walletUser = await userModel.findByWalletAddress(payload.walletAddress);
-    if (walletUser) {
-        throw new ApiError(StatusCodes.CONFLICT,
-            'Wallet address is already registered. Please use a different wallet or contact support.');
-    }
-
-    // Tạo người dùng
-    const user = await userModel.createNew({
-        authProviders: [
-            payload.nationId && {
-                type: 'LOCAL',
-                nationId: payload.nationId,
-                email: payload.email,
-                passwordHash: bcrypt.hashSync(payload.password, 8),
-                walletAddress: payload.walletAddress, // ✅ Include wallet address
-            },
-        ].filter(Boolean),
-        blockchainAccount: {
-            status: 'PENDING', // ✅ Set initial blockchain status
-            registeredAt: new Date(),
-        },
-    });
-
-    // Tạo audit log
-    await auditLogModel.createLog({
-        userId: user._id,
-        action: 'REGISTER_USER',
-        entityType: 'USER',
-        entityId: user._id,
-        details: {
-            walletAddress: payload.walletAddress,
-            note: 'User registered with wallet address',
-        },
-    });
-
-    return {
-        userId: user._id,
-        walletAddress: payload.walletAddress,
-        blockchainStatus: 'PENDING', // ✅ Tell client they need admin approval
-    };
-};
 
 const NONCE_STORE = new Map();
 
@@ -118,6 +51,15 @@ const verifyWalletLogin = async (walletAddress, signature) => {
             blockchainAccount: {
                 status: 'NONE',
             },
+        });
+
+        await auditLogModel.createLog({
+            userId: user._id,
+            walletAddress,
+            action: 'WALLET_AUTO_REGISTER',
+            entityType: 'USER',
+            entityId: user._id,
+            details: { note: 'Auto-created account for new wallet login' }
         });
     }
 
@@ -307,7 +249,6 @@ const refreshAccessToken = async (refreshToken) => {
 };
 
 export const authService = {
-    register,
     loginByNationId,
     createWalletNonce,
     verifyWalletLogin,

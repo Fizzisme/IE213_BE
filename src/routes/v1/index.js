@@ -45,7 +45,4 @@ Router.use('/patient-records', patientRecordRoute);
 // Blockchain API
 Router.use('/blockchain', blockchainRoute);
 
-// Notifications API (Feature 4) - REMOVED (not essential for workflow)
-// Router.use('/notifications', notificationRoute);
-
 export const APIs_V1 = Router;

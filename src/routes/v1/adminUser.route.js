@@ -564,7 +564,7 @@ Router.patch('/users/:id/verify-id', adminUserValidation.verifyIdDocument, admin
 /**
  * @swagger
  * /v1/admins/users/{id}/soft-delete:
- *   patch:
+ *   delete:
  *     summary: Soft delete user bằng cách cập nhật trạng thái + cascade theo role
  *     tags: [Admin]
  *     security:
@@ -587,32 +587,7 @@ Router.patch('/users/:id/verify-id', adminUserValidation.verifyIdDocument, admin
  *         description: User không tồn tại
  *       409:
  *         description: Conflict - User đã bị xóa trước đó
- *   delete:
- *     summary: Soft delete user (alias method)
- *     description: Endpoint alias của PATCH `/soft-delete`, giữ cùng business logic.
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID của user cần xóa mềm
- *     responses:
- *       200:
- *         description: User đã được đánh dấu soft delete
- *       401:
- *         description: Unauthorized - Token không hợp lệ hoặc hết hạn
- *       403:
- *         description: Forbidden - Không phải ADMIN
- *       404:
- *         description: User không tồn tại
- *       409:
- *         description: Conflict - User đã bị xóa trước đó
  */
-Router.patch('/users/:id/soft-delete', adminUserController.softDeleteUser);
 Router.delete('/users/:id/soft-delete', adminUserController.softDeleteUser);
 
 export const adminUserRoute = Router;

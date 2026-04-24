@@ -1,20 +1,16 @@
 import { z } from 'zod';
 import { zodValidate } from '~/utils/zodValidate';
 
-// Patient profile ONLY includes: gender, birthYear
-// fullName, phoneNumber are in User model
-const createPatientSchema = z.object({
-    gender: z.enum(['M', 'F']),
-    dob: z.number(),
+// Schema cập nhật thông tin y tế bệnh nhân
+const updatePatientProfileSchema = z.object({
+    fullName: z.string().min(2).optional(),
+    phoneNumber: z.string().regex(/^(0|\+84)(3|5|7|8|9)[0-9]{8}$/, 'Số điện thoại không hợp lệ').optional(),
+    gender: z.enum(['M', 'F']).optional(),
+    dob: z.number().optional(), // Unix timestamp (ms)
 });
 
-const createPatient = zodValidate(createPatientSchema);
-const confirmRegisterBlockchainSchema = z.object({
-    txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/, 'txHash không hợp lệ'),
-});
-const confirmRegisterBlockchain = zodValidate(confirmRegisterBlockchainSchema);
+const updatePatientProfile = zodValidate(updatePatientProfileSchema);
 
 export const patientValidation = {
-    createPatient,
-    confirmRegisterBlockchain,
+    updatePatientProfile,
 };

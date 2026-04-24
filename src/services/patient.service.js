@@ -7,51 +7,10 @@ import { ethers } from 'ethers';
 import metaMaskTxBuilder, { verifyTransactionOnBlockchain } from '~/utils/metaMaskTxBuilder';
 import { blockchainContracts } from '~/blockchain/contract';
 
-// Hàm tạo thông tin bệnh nhân
-const createPatient = async (user, payload) => {
-    // ✅ [MEDIUM FIX #3] Check if profile already exists (prevent duplicates)
-    const existingPatient = await patientModel.findByUserId(user._id);
-    if (existingPatient) {
-        throw new ApiError(
-            StatusCodes.CONFLICT,
-            'Bạn đã có hồ sơ bệnh nhân. Không thể tạo profile lần thứ 2'
-        );
-    }
-
-    // Tìm người dùng trong DB
-    const userExisted = await userModel.findById(user._id);
-    // Nếu người dùng không tồn tại thì ném ra lỗi
-    if (!userExisted) throw new ApiError(StatusCodes.NOT_FOUND, 'Người dùng chưa tồn tại');
-
-    // ✅ [MEDIUM FIX #3] Check user status is ACTIVE (prevent inactive users creating profiles)
-    if (userExisted.status !== 'ACTIVE') {
-        throw new ApiError(
-            StatusCodes.FORBIDDEN,
-            `Tài khoản của bạn hiện tại là ${userExisted.status}. Chỉ tài khoản ACTIVE có thể tạo hồ sơ`
-        );
-    }
-
-    // Tạo patient sau khi tạo người dùng có tài khoản
-    const patient = await patientModel.createNew({
-        userId: userExisted._id,
-        gender: payload.gender,
-        birthYear: payload.dob,
-    });
-    // Cập nhật user đã có profile
-    await userModel.updateById(patient.userId, {
-        hasProfile: true,
-    });
-
-    // Tạo audit log
-    await auditLogModel.createLog({
-        userId: userExisted._id,
-        action: 'CREATE_PATIENT',
-        entityType: 'PATIENT',
-        entityId: patient._id,
-    });
-    return {
-        patientId: patient._id,
-    };
+// Hàm cập nhật/hoàn thiện thông tin hồ sơ bệnh nhân
+const updateMyProfile = async (user, payload) => {
+    const { userService } = await import('~/services/user.service');
+    return await userService.updateMyProfile(user._id, payload);
 };
 
 // Hàm lấy profile của chính mình
@@ -241,7 +200,7 @@ const verifyTxFunctionCall = async ({ txHash, contract, functionName }) => {
 };
 
 export const patientService = {
-    createPatient,
+    updateMyProfile,
     getAll,
     getPatientById,
     getMyProfile,

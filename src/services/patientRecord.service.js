@@ -169,17 +169,48 @@ const getRecordDetail = async (currentUser, recordId) => {
 };
 
 // Verify hash của một record
-const verifyRecordHash = async (currentUser, recordId, computedHash, hashType) => {
+const verifyRecordHash = async (currentUser, recordId, hashType) => {
     // hashType: 0 = orderHash, 1 = labResultHash, 2 = interpretationHash
     try {
+        // 1. Tìm lab order trong MongoDB thông qua blockchainRecordId
+        const labOrder = await labOrderModel.LabOrderModel.findOne({
+            blockchainRecordId: recordId.toString(),
+        });
+
+        if (!labOrder) {
+            throw new ApiError(StatusCodes.NOT_FOUND, `Không tìm thấy dữ liệu Off-chain cho record ${recordId}`);
+        }
+
+        // 2. Lấy mã băm tương ứng đang lưu tại MongoDB (đây là hash của dữ liệu Off-chain)
+        let offChainHash = '';
+        if (hashType === 0) offChainHash = labOrder.orderHash;
+        else if (hashType === 1) offChainHash = labOrder.labResultHash;
+        else if (hashType === 2) offChainHash = labOrder.interpretationHash;
+        else throw new ApiError(StatusCodes.BAD_REQUEST, 'hashType không hợp lệ (0, 1, 2)');
+
+        if (!offChainHash) {
+            throw new ApiError(StatusCodes.BAD_REQUEST, `Hồ sơ chưa có mã băm cho loại ${hashType}`);
+        }
+
+        // 3. Gọi Smart Contract để đối chiếu offChainHash với bản gốc On-chain
         const isValid = await blockchainContracts.read.ehrManager.verifyRecordHash(
             recordId,
-            computedHash,
+            offChainHash,
             hashType
         );
-        return { isValid };
+
+        return {
+            isValid,
+            recordId,
+            hashType,
+            offChainHash,
+            note: isValid
+                ? 'Dữ liệu Off-chain khớp hoàn toàn với Blockchain'
+                : 'CẢNH BÁO: Dữ liệu Off-chain đã bị can thiệp trái phép!'
+        };
     } catch (error) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, `Verify hash thất bại: ${error.message}`);
+        if (error instanceof ApiError) throw error;
+        throw new ApiError(StatusCodes.BAD_REQUEST, `Xác minh tính toàn vẹn thất bại: ${error.message}`);
     }
 };
 

@@ -7,69 +7,6 @@ const Router = express.Router();
 
 /**
  * @swagger
- * /v1/auth/register:
- *   post:
- *     summary: Register new Patient account
- *     tags: [Auth]
- *     description: |
- *       Đăng ký tài khoản Bệnh nhân mới bằng ví MetaMask.
- *       Bác sĩ và Kỹ thuật viên Lab được Admin tạo trực tiếp, không qua registration công khai.
- *       Sau khi đăng ký, status = PENDING, chờ admin duyệt.
- *       Các trường email, password, nationId không còn bắt buộc (optional).
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - walletAddress
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *                 example: "patient@hospital.com"
- *                 description: Email người dùng (optional)
- *               password:
- *                 type: string
- *                 minLength: 8
- *                 example: "password123"
- *                 description: Mật khẩu (optional)
- *               nationId:
- *                 type: string
- *                 pattern: '^\d{9}|\d{12}$'
- *                 example: "123456789"
- *                 description: CCCD/CMND (optional)
- *               walletAddress:
- *                 type: string
- *                 pattern: '^0x[a-fA-F0-9]{40}$'
- *                 example: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
- *                 description: "Địa chỉ ví Ethereum (REQUIRED) - format: 0x + 40 hex chars"
- *     responses:
- *       201:
- *         description: User registered successfully, status = PENDING (waiting for admin approval)
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 userId:
- *                   type: string
- *                   example: "69ce8d5f7f0f573cd0a67ba8"
- *                 walletAddress:
- *                   type: string
- *                   example: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
- *                 blockchainStatus:
- *                   type: string
- *                   example: "PENDING"
- *       400:
- *         description: Validation error (missing walletAddress, invalid format, duplicate email/wallet)
- *       409:
- *         description: Conflict - Email hoặc wallet address đã được đăng ký
- */
-Router.post('/register', authValidation.register, authController.register);
-/**
- * @swagger
  * /v1/auth/login/nationId:
  *   post:
  *     summary: Login with CCCD/CMND and password

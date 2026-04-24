@@ -26,33 +26,33 @@ const auditLogSchema = new Schema(
             default: null,
             index: true,
         },
-
-        action: {
-            type: String,
-            enum: [
-                'LOGIN_LOCAL',
-                'LOGIN_WALLET',
-                'ADMIN_OVERRIDE',
-                'REGISTER_USER',
-                'CREATE_PATIENT',
-                'CREATE_MEDICAL_RECORD',
-                'CREATE_TEST_RESULT',
-                // EHR Workflow actions
-                'CREATE_LAB_ORDER',
-                'CONSENT_LAB_ORDER',
-                'RECEIVE_LAB_ORDER',
-                'POST_LAB_RESULT',
-                'ADD_CLINICAL_INTERPRETATION',
-                'COMPLETE_RECORD',
-                // Access Control actions
-                'GRANT_ACCESS',
-                'UPDATE_ACCESS',
-                'REVOKE_ACCESS',
-                // Blockchain sync actions
-                'SYNC_BLOCKCHAIN_EVENT_FAILED',
-            ],
-            required: true,
-        },
+action: {
+    type: String,
+    enum: [
+        'LOGIN_LOCAL',
+        'LOGIN_WALLET',
+        'ADMIN_OVERRIDE',
+        'WALLET_AUTO_REGISTER',
+        'UPDATE_PATIENT_PROFILE',
+        'CREATE_MEDICAL_RECORD',
+        'CREATE_TEST_RESULT',
+        // EHR Workflow actions
+        'CREATE_LAB_ORDER',
+        'CONSENT_LAB_ORDER',
+        'RECEIVE_LAB_ORDER',
+        'POST_LAB_RESULT',
+        'ADD_CLINICAL_INTERPRETATION',
+        'COMPLETE_RECORD',
+        // Access Control actions
+        'GRANT_ACCESS',
+        'UPDATE_ACCESS',
+        'REVOKE_ACCESS',
+        // Blockchain sync actions
+        'SYNC_BLOCKCHAIN_EVENT_FAILED',
+        'REFRESH_TOKEN',
+    ],
+    required: true,
+},
 
         entityType: {
             type: String,
