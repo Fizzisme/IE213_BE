@@ -6,14 +6,17 @@ import { StatusCodes } from 'http-status-codes';
 import { auditLogModel } from '~/models/auditLog.model';
 import { AI_SERVICE_URL } from '~/utils/constants';
 import { patientModel } from '~/models/patient.model';
+import { generateDataHash } from '~/utils/algorithms';
+import { medicalLedgerContract } from '~/blockchains/contract';
+import { blockchainProvider } from '~/blockchains/provider';
 
 const createNew = async (medicalRecordId, body, currentUser) => {
     const { testType, rawData } = body;
     // Kiểm tra medical record tồn tại
     const medicalRecord = await medicalRecordModel.findOneById(medicalRecordId);
-    if (!medicalRecord) throw new ApiError(StatusCodes.NOT_FOUND, `Không có hồ sơ bệnh án`);
+    if (!medicalRecord) throw new ApiError(StatusCodes.NOT_FOUND, 'Không có hồ sơ bệnh án');
     if (medicalRecord.status !== 'CREATED')
-        throw new ApiError(StatusCodes.BAD_REQUEST, `hồ sơ bệnh án với id:${medicalRecordId} đã có kết quả xét nghiệm`);
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'hồ sơ bệnh án với id:' + medicalRecordId + ' đã có kết quả xét nghiệm');
 
     // Khai báo biến testResult
     let testResult;
@@ -72,6 +75,13 @@ const createNew = async (medicalRecordId, body, currentUser) => {
 
     if (!testResult) throw new ApiError(StatusCodes.NOT_FOUND, 'Tạo kết quả xét nghiệm thất bại');
 
+    // --- BLOCKCHAIN HASH GENERATION ---
+    const resultHash = generateDataHash({
+        testType: testResult.testType,
+        rawData: testResult.rawData,
+        aiAnalysis: testResult.aiAnalysis,
+    });
+
     // Cập nhật trang thái hồ sơ bệnh án
     await medicalRecordModel.update(medicalRecordId, { status: 'HAS_RESULT' });
 
@@ -81,9 +91,41 @@ const createNew = async (medicalRecordId, body, currentUser) => {
         action: 'CREATE_TEST_RESULT',
         entityType: 'TEST_RESULT',
         entityId: testResult._id,
-        details: { note: `Lab tech create test result id:${testResult._id}` },
+        details: { note: 'Lab tech create test result, waiting for blockchain sync' },
     });
-    return { createdAt: testResult.createdAt };
+    return {
+        message: 'Kết quả đã được lưu, vui lòng xác nhận giao dịch trên MetaMask',
+        testResultId: testResult._id,
+        resultHash,
+    };
+};
+
+const verifyTx = async (testResultId, txHash) => {
+    const testResult = await testResultModel.findOneById(testResultId);
+    if (!testResult) throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy kết quả');
+
+    // Đợi Receipt từ Blockchain
+    const receipt = await blockchainProvider.waitForTransaction(txHash);
+
+    if (receipt.status === 1) {
+        // Cập nhật trạng thái đồng bộ
+        await testResultModel.TestResultModel.updateOne(
+            { _id: testResultId },
+            {
+                $set: {
+                    blockchainMetadata: {
+                        isSynced: true,
+                        txHash: txHash,
+                        syncAt: new Date(),
+                    },
+                },
+            },
+        );
+
+        return 'Đồng bộ Blockchain thành công';
+    } else {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch trên Blockchain thất bại');
+    }
 };
 
 const getDetail = async (testResultId) => {
@@ -102,4 +144,5 @@ export const testResultService = {
     createNew,
     getDetail,
     getAll,
+    verifyTx,
 };

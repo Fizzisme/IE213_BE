@@ -56,6 +56,13 @@ const medicalRecordSchema = new mongoose.Schema(
             type: String,
         },
 
+        blockchainMetadata: {
+            isSynced: { type: Boolean, default: false },
+            txHash: { type: String },
+            onChainHash: { type: String },
+            syncAt: { type: Date }
+        },
+
         _destroy: {
             type: Boolean,
             default: false,

@@ -31,8 +31,19 @@ const getAll = async (req, res, next) => {
     }
 };
 
+const verifyTx = async (req, res, next) => {
+    try {
+        const { txHash } = req.body;
+        const result = await testResultService.verifyTx(req.params.testResultId, txHash);
+        res.status(StatusCodes.OK).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const testResultController = {
     createNew,
     getAll,
     getDetail,
+    verifyTx,
 };

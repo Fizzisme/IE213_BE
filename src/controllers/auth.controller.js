@@ -35,14 +35,14 @@ const loginByNationId = async (req, res, next) => {
 // Controller đăng nhập bằng ví
 const loginByWallet = async (req, res, next) => {
     try {
-        const { walletAddress, signature } = req.body;
+        const { walletAddress, signature, registrationSignature } = req.body;
         // Phase 1: chưa có signature -> trả nonce
         if (!signature) {
             const nonce = await authService.createWalletNonce(walletAddress);
             return res.status(200).json({ nonce });
         }
         // Phase 2: có signature -> verify login
-        const result = await authService.verifyWalletLogin(walletAddress, signature);
+        const result = await authService.verifyWalletLogin(walletAddress, signature, registrationSignature);
         // Trả về 2 cookie
         res.cookie('accessToken', result.accessToken, {
             httpOnly: true,

@@ -388,10 +388,70 @@
  *     responses:
  *       200:
  *         description: Cập nhật chẩn đoán thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 medicalRecordId:
+ *                   type: string
+ *                 diagnosisHash:
+ *                   type: string
  *       400:
  *         description: Dữ liệu không hợp lệ
  *       401:
  *         description: Unauthorized
  *       403:
  *         description: Forbidden
+ */
+
+/**
+ * @swagger
+ * v1/doctors/medical-records/{medicalRecordId}/verify:
+ *   get:
+ *     summary: Kiểm tra tính toàn vẹn dữ liệu (Integrity Check) với Blockchain
+ *     tags: [DOCTOR]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: medicalRecordId
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Trả về kết quả đối soát Hash
+ */
+
+/**
+ * @swagger
+ * v1/doctors/medical-records/{medicalRecordId}/verify-tx:
+ *   post:
+ *     summary: Xác minh giao dịch sau khi ký MetaMask
+ *     tags: [DOCTOR]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: medicalRecordId
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - txHash
+ *             properties:
+ *               txHash:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Đồng bộ thành công
  */

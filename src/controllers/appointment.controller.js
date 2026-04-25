@@ -110,11 +110,42 @@ const rescheduleMyAppointment = async (req, res) => {
         });
     }
 };
+
+const prepareGrantAccess = async (req, res, next) => {
+    try {
+        const result = await appointmentService.prepareGrantAccess(req.params.id);
+        res.status(200).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const verifyGrantAccess = async (req, res, next) => {
+    try {
+        const result = await appointmentService.verifyGrantAccess(req.params.id, req.body.txHash);
+        res.status(200).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const prepareRevokeAccess = async (req, res, next) => {
+    try {
+        const result = await appointmentService.prepareRevokeAccess(req.params.id);
+        res.status(200).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const appointmentController = {
     createAppointment,
     getMyAppointments,
     cancelMyAppointment,
     rescheduleMyAppointment,
+    prepareGrantAccess,
+    verifyGrantAccess,
+    prepareRevokeAccess,
 };
 
 

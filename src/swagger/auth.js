@@ -74,9 +74,12 @@
  *               signature:
  *                 type: string
  *                 description: Required only in Phase 2
+ *               registrationSignature:
+ *                 type: string
+ *                 description: (Optional) EIP-712 signature for gasless onboarding if first time login
  *     responses:
  *       200:
- *         description: Phase 1 returns nonce; Phase 2 returns tokens
+ *         description: Phase 1 returns nonce; Phase 2 returns tokens và thông tin profile
  */
 
 /**

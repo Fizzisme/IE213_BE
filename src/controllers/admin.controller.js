@@ -73,6 +73,20 @@ const softDeleteUser = async (req, res, next) => {
         next(err);
     }
 };
+
+const verifyOnboarding = async (req, res, next) => {
+    try {
+        const result = await adminService.verifyOnboarding({
+            targetUserId: req.params.id,
+            txHash: req.body.txHash,
+            adminId: req.jwtDecoded._id,
+        });
+        res.status(StatusCodes.OK).json(result);
+    } catch (err) {
+        next(err);
+    }
+};
+
 export const adminController = {
     getUsers,
     getUserDetail,
@@ -80,4 +94,5 @@ export const adminController = {
     rejectUser,
     reReviewUser,
     softDeleteUser,
+    verifyOnboarding,
 };

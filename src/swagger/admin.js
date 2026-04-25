@@ -97,7 +97,20 @@
  *         description: ID của user cần duyệt
  *     responses:
  *       200:
- *         description: User approved successfully
+ *         description: Trả về thông tin để Admin ký MetaMask (nếu cần sync blockchain)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 needsBlockchain:
+ *                   type: boolean
+ *                 targetWallet:
+ *                   type: string
+ *                 registrationSignature:
+ *                   type: string
  *       401:
  *         description: Unauthorized - Token không hợp lệ hoặc hết hạn
  *       403:
@@ -106,6 +119,36 @@
  *         description: User không tồn tại
  *       409:
  *         description: Conflict - User không ở trạng thái PENDING
+ */
+
+/**
+ * @swagger
+ * /v1/admin/users/{id}/verify-onboarding:
+ *   post:
+ *     summary: Xác minh giao dịch Admin đã đăng ký user lên Blockchain
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - txHash
+ *             properties:
+ *               txHash:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Thành công
  */
 
 /**

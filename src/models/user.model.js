@@ -84,6 +84,13 @@ const userSchema = new mongoose.Schema(
             type: String,
             default: null,
         },
+        registrationSignature: {
+            type: String, // Chữ ký số EIP-712 để Admin nộp Gasless
+        },
+        blockchainMetadata: {
+            isSynced: { type: Boolean, default: false },
+            txHash: { type: String },
+        },
     },
     {
         timestamps: true,

@@ -59,12 +59,53 @@
  *     responses:
  *       201:
  *         description: Tạo kết quả xét nghiệm thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 testResultId:
+ *                   type: string
+ *                 resultHash:
+ *                   type: string
  *       400:
  *         description: Dữ liệu không hợp lệ
  *       401:
  *         description: Unauthorized
  *       403:
  *         description: Forbidden
+ */
+
+/**
+ * @swagger
+ * v1/lab-tech/test-results/{testResultId}/verify-tx:
+ *   post:
+ *     summary: Xác minh giao dịch sau khi Lab Tech ký MetaMask
+ *     tags: [Lab Tech]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: testResultId
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - txHash
+ *             properties:
+ *               txHash:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Đồng bộ thành công
  */
 
 /**

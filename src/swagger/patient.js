@@ -101,3 +101,69 @@
  *       500:
  *         description: Lỗi server
  */
+
+/**
+ * @swagger
+ * v1/patients/appointments/{id}/prepare-grant-access:
+ *   get:
+ *     summary: Lấy thông tin ví bác sĩ để cấp quyền trên Blockchain
+ *     tags: [Patient]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Trả về doctorWallet và duration
+ */
+
+/**
+ * @swagger
+ * v1/patients/appointments/{id}/verify-grant-access:
+ *   post:
+ *     summary: Xác minh giao dịch cấp quyền (grantAccess) thành công
+ *     tags: [Patient]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               txHash:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Xác minh thành công
+ */
+
+/**
+ * @swagger
+ * v1/patients/appointments/{id}/prepare-revoke-access:
+ *   get:
+ *     summary: Lấy thông tin ví bác sĩ để thu hồi quyền trên Blockchain
+ *     tags: [Patient]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Trả về doctorWallet
+ */
