@@ -13,7 +13,18 @@ const getMyProfile = async (user) => {
     // Lấy các thông tin cần trả về
     // const { _id, userId, fullName, gender, birthYear, phoneNumber, createdAt } = labTech;
 
-    return doctor;
+    return {
+        fullName: doctor.fullName,
+        gender: doctor.gender,
+        specialization: doctor.specialization,
+        hospital: doctor.hospital,
+        birtYear: doctor.bithYear,
+        licenseNumber: doctor.licenseNumber,
+        email: doctor.email,
+        status: doctor.status,
+        phoneNumber: doctor.phoneNumber,
+        createdAt: doctor.createdAt,
+    };
 };
 
 export const doctorService = {

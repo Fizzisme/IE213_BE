@@ -19,7 +19,7 @@ const doctorSchema = new mongoose.Schema(
         },
 
         specialization: {
-            type: String,
+            type: Array,
             required: true,
         },
 
@@ -33,7 +33,23 @@ const doctorSchema = new mongoose.Schema(
             default: null,
         },
 
+        gender: {
+            type: String,
+            enum: ['M', 'F'],
+            default: '',
+        },
+
         email: {
+            type: String,
+            default: null,
+        },
+
+        phoneNumber: {
+            type: String,
+            default: null,
+        },
+
+        birthYear: {
             type: String,
             default: null,
         },
@@ -70,7 +86,7 @@ const softDeleteByUserId = async (userId) => {
 };
 
 const findOneByUserId = async (userId) => {
-    return await DoctorModel.find({ userId: userId });
+    return await DoctorModel.findOne({ userId: userId });
 };
 
 export const doctorModel = {

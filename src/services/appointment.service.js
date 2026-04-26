@@ -1,11 +1,11 @@
 import { appointmentModel } from '~/models/appointment.model';
 import { serviceModel } from '~/models/service.model';
+import { StatusCodes } from 'http-status-codes';
+import ApiError from '~/utils/ApiError';
 import { doctorModel } from '~/models/doctor.model';
 import { userModel } from '~/models/user.model';
 import { blockchainProvider } from '~/blockchains/provider';
 import { blockchainAbis, dynamicAccessControlContract } from '~/blockchains/contract';
-import ApiError from '~/utils/ApiError';
-import { StatusCodes } from 'http-status-codes';
 import { validateContractTransaction } from '~/utils/blockchainVerification';
 
 const createAppointment = async (data, patientId) => {
@@ -47,7 +47,7 @@ const createAppointment = async (data, patientId) => {
         serviceId,
         doctorId: doctorId,
         appointmentDateTime: appointmentDate,
-        description,
+        patientDescription,
         price: service.price,
     });
 
@@ -182,6 +182,12 @@ const prepareRevokeAccess = async (appointmentId) => {
     };
 };
 
+const getAppointments = async () => {
+    const appointments = await appointmentModel.getAppointments();
+    if (!appointments) throw new ApiError(StatusCodes.NOT_FOUND, 'Không có danh sách lịch hẹn');
+    return appointments;
+};
+
 const getAppointmentsByPatient = async (patientId) => {
     return await appointmentModel.getAppointmentsByPatientId(patientId);
 };
@@ -303,12 +309,29 @@ const rescheduleMyAppointment = async (appointmentId, patientId, data) => {
     return updated;
 };
 
+const updateStatus = async (appointmentId, payload, userId) => {
+    const appointment = await appointmentModel.findOneAndUpdateAppointment(
+        {
+            _id: appointmentId,
+        },
+        {
+            ...payload,
+            doctorId: userId,
+        },
+    );
+    if (!appointment) throw new ApiError(StatusCodes.BAD_REQUEST, 'Cập nhật thất bại');
+
+    return 'Cập nhật thành công';
+};
+
 export const appointmentService = {
     createAppointment,
     getAppointmentsByPatient,
     getAppointmentsByDoctor,
     cancelMyAppointment,
     rescheduleMyAppointment,
+    getAppointments,
+    updateStatus,
     prepareGrantAccess,
     verifyGrantAccess,
     prepareRevokeAccess,

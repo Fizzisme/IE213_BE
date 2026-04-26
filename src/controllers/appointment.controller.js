@@ -1,6 +1,7 @@
 import { appointmentService } from '~/services/appointment.service';
 import { patientModel } from '~/models/patient.model';
 import { notificationService } from '~/services/notification.service';
+import { StatusCodes } from 'http-status-codes';
 const createAppointment = async (req, res) => {
     try {
         const userId = req.user._id;
@@ -18,8 +19,7 @@ const createAppointment = async (req, res) => {
             refId: appointment._id,
             refModel: 'appointments',
         };
-        await notificationService.createNotification(notiPayload);
-
+        const noti = await notificationService.createNotification(notiPayload);
         return res.status(201).json({
             message: 'Đặt lịch thành công',
             data: appointment,
@@ -98,7 +98,7 @@ const rescheduleMyAppointment = async (req, res) => {
                 rescheduledAt: new Date(),
             },
         });
-        console.log(result);
+
         return res.status(200).json(result);
     } catch (e) {
         return res.status(e.statusCode || 500).json({
@@ -107,6 +107,26 @@ const rescheduleMyAppointment = async (req, res) => {
     }
 };
 
+const getAppointments = async (req, res, next) => {
+    try {
+        const result = await appointmentService.getAppointments();
+        return res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+const updateStatus = async (req, res, next) => {
+    try {
+        const appointmentId = req.params.appointmentId;
+        const result = await appointmentService.updateStatus(appointmentId, req.body, req.user._id);
+
+        return res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+}
+      
 const getDoctorAppointments = async (req, res, next) => {
     try {
         const result = await appointmentService.getAppointmentsByDoctor(req.user._id);
@@ -160,6 +180,8 @@ export const appointmentController = {
     getDoctorAppointments,
     cancelMyAppointment,
     rescheduleMyAppointment,
+    getAppointments,
+    updateStatus,
     prepareGrantAccess,
     verifyGrantAccess,
     prepareRevokeAccess,
