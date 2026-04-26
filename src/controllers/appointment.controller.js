@@ -6,7 +6,7 @@ const createAppointment = async (req, res) => {
         const userId = req.user._id;
         const patient = await patientModel.findByUserId(userId);
         const { appointment, blockchain } = await appointmentService.createAppointment(req.body, patient._id);
-        
+
         const notiPayload = {
             senderId: null,
             senderModel: 'system',
@@ -78,7 +78,6 @@ const cancelMyAppointment = async (req, res) => {
 
 const rescheduleMyAppointment = async (req, res) => {
     try {
-        console.log(req.body);
         const appointmentId = req.params.id;
         const patient = await patientModel.findByUserId(req.user._id);
         const patientId = patient._id;
@@ -166,5 +165,3 @@ export const appointmentController = {
     prepareRevokeAccess,
     verifyRevokeAccess,
 };
-
-
