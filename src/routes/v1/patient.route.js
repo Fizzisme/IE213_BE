@@ -23,6 +23,7 @@ Router.patch('/appointments/:id/reschedule', appointmentController.rescheduleMyA
 // Api cấp quyền cho bác sĩ trên Blockchain
 Router.get('/appointments/:id/prepare-grant-access', appointmentController.prepareGrantAccess);
 Router.get('/appointments/:id/prepare-revoke-access', appointmentController.prepareRevokeAccess);
+Router.post('/appointments/:id/verify-revoke-access', chainCheck, appointmentController.verifyRevokeAccess);
 Router.post('/appointments/:id/verify-grant-access', chainCheck, appointmentController.verifyGrantAccess);
 Router.get('/notifications/me', notificationController.getNotifications);
 Router.patch('/notifications/:notificationId/read', notificationController.markAsRead);

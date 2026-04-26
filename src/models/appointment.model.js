@@ -52,7 +52,6 @@ const createNew = async (data) => {
     return await AppointmentModel.create({
         ...data,
         status: APPOINTMENT_STATUS.PENDING,
-        doctorId: null,
     });
 };
 

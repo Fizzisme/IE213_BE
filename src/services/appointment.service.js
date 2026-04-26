@@ -7,31 +7,56 @@ import ApiError from '~/utils/ApiError';
 import { StatusCodes } from 'http-status-codes';
 
 const createAppointment = async (data, patientId) => {
-    const { appointmentDateTime, serviceId, description } = data;
+    const { appointmentDateTime, serviceId, doctorId, description } = data;
 
     // validate
     if (!appointmentDateTime || !serviceId) {
-        throw new Error('Thiếu dữ liệu');
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu dữ liệu (ngày giờ hoặc dịch vụ)');
     }
 
     const appointmentDate = new Date(appointmentDateTime);
+    if (appointmentDate < new Date()) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Không thể đặt lịch hẹn trong quá khứ');
+    }
 
     // check service
     const service = await serviceModel.getServiceById(serviceId);
     if (!service) {
-        throw new Error('Service không tồn tại');
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Dịch vụ không tồn tại');
     }
 
     // create
     const newAppointment = await appointmentModel.createNew({
         patientId: patientId,
         serviceId,
+        doctorId: doctorId || null,
         appointmentDateTime: appointmentDate,
         description,
         price: service.price,
     });
 
-    return newAppointment;
+    // --- BLOCKCHAIN UX OPTIMIZATION ---
+    let blockchainMetadata = null;
+    if (doctorId) {
+        const doctorProfile = await doctorModel.DoctorModel.findById(doctorId);
+        if (doctorProfile) {
+            const doctorUser = await userModel.findById(doctorProfile.userId);
+            const doctorWallet = doctorUser.authProviders.find(p => p.type === 'WALLET')?.walletAddress;
+            if (doctorWallet) {
+                blockchainMetadata = {
+                    action: 'GRANT_ACCESS',
+                    doctorWallet,
+                    durationHours: 24,
+                    message: 'Vui lòng ký xác nhận cấp quyền xem hồ sơ cho Bác sĩ qua MetaMask',
+                };
+            }
+        }
+    }
+
+    return {
+        appointment: newAppointment,
+        blockchain: blockchainMetadata,
+    };
 };
 
 // --- BLOCKCHAIN ACCESS CONTROL LOGIC ---
@@ -106,41 +131,38 @@ const getAppointmentsByPatient = async (patientId) => {
 const cancelMyAppointment = async (appointmentId, patientId) => {
     const appointment = await appointmentModel.getAppointmentById(appointmentId);
     if (!appointment) {
-        throw new Error('Khong tim thay lich hen!');
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy lịch hẹn');
     }
     if (appointment.patientId.toString() !== patientId.toString()) {
-        throw new Error('Khong co quyen huy lich nay');
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Bạn không có quyền hủy lịch này');
     }
     if (appointment.status !== 'PENDING') {
-        throw new Error('Chi huy lich dang cho!');
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Chỉ có thể hủy lịch đang chờ xác nhận');
     }
 
     appointment.status = 'CANCELLED';
     await appointment.save();
 
-    // --- BLOCKCHAIN LOGIC ---
-    // Kiểm tra xem bác sĩ đã được gán chưa để nhắc nhở thu hồi quyền
-    let needsRevoke = false;
-    let doctorWallet = null;
-
+    // --- BLOCKCHAIN UX OPTIMIZATION ---
+    let blockchainMetadata = null;
     if (appointment.doctorId) {
         const doctorProfile = await doctorModel.DoctorModel.findById(appointment.doctorId);
         const doctorUser = await userModel.findById(doctorProfile.userId);
-        doctorWallet = doctorUser.authProviders.find(p => p.type === 'WALLET')?.walletAddress;
+        const doctorWallet = doctorUser.authProviders.find(p => p.type === 'WALLET')?.walletAddress;
 
         if (doctorWallet) {
-            needsRevoke = true;
+            blockchainMetadata = {
+                action: 'REVOKE_ACCESS',
+                doctorWallet,
+                message: 'Lịch hẹn đã hủy, vui lòng ký MetaMask để thu hồi quyền xem hồ sơ của Bác sĩ.',
+            };
         }
     }
 
     return {
         message: 'Hủy lịch hẹn thành công',
         appointment: appointment,
-        blockchain: {
-            needsRevoke,
-            doctorWallet,
-            reason: 'Lịch hẹn đã bị hủy, bạn nên thu hồi quyền truy cập hồ sơ của bác sĩ này trên Blockchain.',
-        },
+        blockchain: blockchainMetadata,
     };
 };
 
@@ -174,4 +196,5 @@ export const appointmentService = {
     prepareGrantAccess,
     verifyGrantAccess,
     prepareRevokeAccess,
+    verifyRevokeAccess,
 };

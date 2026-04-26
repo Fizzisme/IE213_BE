@@ -5,7 +5,8 @@ const createAppointment = async (req, res) => {
     try {
         const userId = req.user._id;
         const patient = await patientModel.findByUserId(userId);
-        const result = await appointmentService.createAppointment(req.body, patient._id);
+        const { appointment, blockchain } = await appointmentService.createAppointment(req.body, patient._id);
+        
         const notiPayload = {
             senderId: null,
             senderModel: 'system',
@@ -13,21 +14,19 @@ const createAppointment = async (req, res) => {
             receiverModel: 'users',
             event: 'APPOINTMENT_CREATED',
             title: 'Đặt lịch thành công',
-            content: `Lịch khám của bạn đã được tạo cho ngày ${result.appointmentDateTime}`,
-            refId: result._id,
+            content: `Lịch khám của bạn đã được tạo cho ngày ${appointment.appointmentDateTime}`,
+            refId: appointment._id,
             refModel: 'appointments',
         };
-        const noti = await notificationService.createNotification(notiPayload);
-        console.log('[NOTI] Created successfully', {
-            notiId: noti._id,
-            receiverId: noti.receiverId,
-        });
+        await notificationService.createNotification(notiPayload);
+
         return res.status(201).json({
             message: 'Đặt lịch thành công',
-            data: result,
+            data: appointment,
+            blockchain: blockchain, // Trả về để Frontend hiện MetaMask ngay
         });
     } catch (error) {
-        return res.status(400).json({
+        return res.status(error.statusCode || 400).json({
             message: error.message,
         });
     }
@@ -138,6 +137,15 @@ const prepareRevokeAccess = async (req, res, next) => {
     }
 };
 
+const verifyRevokeAccess = async (req, res, next) => {
+    try {
+        const result = await appointmentService.verifyRevokeAccess(req.params.id, req.body.txHash);
+        res.status(200).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const appointmentController = {
     createAppointment,
     getMyAppointments,
@@ -146,6 +154,7 @@ export const appointmentController = {
     prepareGrantAccess,
     verifyGrantAccess,
     prepareRevokeAccess,
+    verifyRevokeAccess,
 };
 
 
