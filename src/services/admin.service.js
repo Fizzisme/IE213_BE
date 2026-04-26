@@ -97,7 +97,7 @@ const approveUser = async ({ targetUserId, adminId }) => {
 const rejectUser = async ({ targetUserId, adminId, reason }) => {
     const user = await userModel.findById(targetUserId);
     if (!user) throw new ApiError(StatusCodes.NOT_FOUND, 'User không tồn tại');
-    console.log(user);
+
     // Chỉ từ chối được user đang PENDING
     if (user.status !== userModel.USER_STATUS.PENDING) {
         throw new ApiError(StatusCodes.CONFLICT, `Không thể từ chối user ở trạng thái ${user.status}`);
