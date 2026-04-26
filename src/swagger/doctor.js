@@ -292,6 +292,34 @@
 /**
  * @swagger
  * /v1/doctors/patients/{patientId}/medical-records:
+ *   get:
+ *     summary: Lấy toàn bộ hồ sơ bệnh án của một bệnh nhân
+ *     tags: [Doctor]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: patientId
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: 64f1a2b3c4d5e6f789012345
+ *     responses:
+ *       200:
+ *         description: Danh sách hồ sơ bệnh án của bệnh nhân
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiEnvelope'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/MedicalRecordSummary'
+ *       403:
+ *         description: Doctor không có quyền truy cập hồ sơ của bệnh nhân này trên Blockchain
  *   post:
  *     summary: Doctor tạo hồ sơ bệnh án và nhận metadata để ký createRecord trên MetaMask
  *     tags: [Doctor]

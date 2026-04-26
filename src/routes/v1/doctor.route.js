@@ -32,6 +32,12 @@ Router.get('/test-results', testResultController.getAll);
 Router.get('/patients', patientController.getAll);
 // Api lây chi tiết bệnh nhân
 Router.get('/patients/:patientId', patientController.getPatientById);
+// Api lấy toàn bộ hồ sơ bệnh án của 1 bệnh nhân
+Router.get(
+    '/patients/:patientId/medical-records',
+    medicalRecordValidation.patientId,
+    medicalRecordController.getPatientMedicalRecords,
+);
 // Api tạo hồ sơ bệnh án(ban đầu) cho 1 bệnh nhân
 Router.post(
     '/patients/:patientId/medical-records',

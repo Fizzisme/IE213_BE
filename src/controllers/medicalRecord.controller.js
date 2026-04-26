@@ -47,6 +47,15 @@ const getAll = async (req, res, next) => {
     }
 };
 
+const getPatientMedicalRecords = async (req, res, next) => {
+    try {
+        const result = await medicalRecordService.getPatientMedicalRecords(req.params.patientId, req.user);
+        res.status(StatusCodes.OK).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
 const verifyIntegrity = async (req, res, next) => {
     try {
         const result = await medicalRecordService.verifyIntegrity(req.params.medicalRecordId);
@@ -72,6 +81,7 @@ export const medicalRecordController = {
     diagnosis,
     getDetail,
     getAll,
+    getPatientMedicalRecords,
     verifyIntegrity,
     verifyTx,
 };

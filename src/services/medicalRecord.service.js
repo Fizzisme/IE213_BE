@@ -357,6 +357,43 @@ const getAll = async (statusArray, sortOrder, q) => {
     });
 };
 
+const getPatientMedicalRecords = async (patientId, currentUser) => {
+    const patient = await patientModel.findById(patientId);
+    if (!patient) throw new ApiError(StatusCodes.NOT_FOUND, 'Bệnh nhân không tồn tại');
+
+    if (currentUser.role === 'DOCTOR') {
+        const doctorUser = await userModel.findById(currentUser._id);
+        const doctorWallet = doctorUser?.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
+
+        const patientUser = await userModel.findById(patient.userId);
+        const patientWallet = patientUser?.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
+
+        if (doctorWallet && patientWallet) {
+            const hasAccess = await dynamicAccessControlContract.canAccess(patientWallet, doctorWallet);
+            if (!hasAccess) {
+                throw new ApiError(StatusCodes.FORBIDDEN, 'Bạn không có quyền truy cập hồ sơ của bệnh nhân này trên Blockchain');
+            }
+        }
+    }
+
+    const medicalRecords = await medicalRecordModel.MedicalRecordModel.find({
+        patientId,
+        _destroy: false,
+    })
+        .populate({
+            path: 'patientId',
+            select: '_id userId fullName gender birthYear phoneNumber avatar',
+        })
+        .sort({ createdAt: -1 });
+
+    return medicalRecords.map((record) => {
+        const obj = record.toObject();
+        obj.patientInfo = obj.patientId;
+        delete obj.patientId;
+        return obj;
+    });
+};
+
 const getDetail = async (medicalRecordId, currentUser) => {
     // 1. TÌM BỆNH ÁN VÀ THÔNG TIN BỆNH NHÂN
     let medicalRecord = await medicalRecordModel.MedicalRecordModel.findById(medicalRecordId).populate({
@@ -426,6 +463,7 @@ export const medicalRecordService = {
     createNew,
     diagnosis,
     getAll,
+    getPatientMedicalRecords,
     getDetail,
     verifyIntegrity,
     verifyTx,

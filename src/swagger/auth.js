@@ -19,7 +19,7 @@
  *           format: date-time
  *         path:
  *           type: string
- *           example: /v1/auth/login-by-wallet
+ *           example: /v1/auth/login/wallet
  *         responseTime:
  *           type: string
  *           example: 24 ms
@@ -197,9 +197,9 @@
 
 /**
  * @swagger
- * /v1/auth/login-by-wallet:
+ * /v1/auth/login/wallet:
  *   post:
- *     summary: Đăng nhập bằng ví - endpoint khuyến nghị cho frontend
+ *     summary: Đăng nhập bằng ví - endpoint chính cho frontend
  *     tags: [Auth]
  *     description: |
  *       Luồng 2 bước.
@@ -228,7 +228,7 @@
  *                   data:
  *                     nonce: Login 1714123456789 - 7dcb7969-76d3-4f71-96fc-a8d16c6c95f3
  *                   timestamp: '2026-04-26T08:00:00.000Z'
- *                   path: /v1/auth/login-by-wallet
+ *                   path: /v1/auth/login/wallet
  *                   responseTime: 12 ms
  *               phase2:
  *                 summary: Đăng nhập thành công sau khi verify signature
@@ -242,17 +242,17 @@
  *                     status: ACTIVE
  *                     hasProfile: true
  *                   timestamp: '2026-04-26T08:01:00.000Z'
- *                   path: /v1/auth/login-by-wallet
+ *                   path: /v1/auth/login/wallet
  *                   responseTime: 33 ms
  */
 
 /**
  * @swagger
- * /v1/auth/login/wallet:
+ * /v1/auth/login-by-wallet:
  *   post:
  *     summary: Đăng nhập bằng ví - alias backward compatible
  *     tags: [Auth]
- *     description: Alias của `/v1/auth/login-by-wallet`, request/response giống hệt.
+ *     description: Alias của `/v1/auth/login/wallet`, request/response giống hệt.
  *     requestBody:
  *       required: true
  *       content:
@@ -263,7 +263,7 @@
  *               - $ref: '#/components/schemas/AuthWalletPhase2Request'
  *     responses:
  *       200:
- *         description: Hoạt động giống `/v1/auth/login-by-wallet`
+ *         description: Hoạt động giống `/v1/auth/login/wallet`
  */
 
 /**

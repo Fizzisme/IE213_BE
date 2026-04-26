@@ -225,21 +225,21 @@ export const signBlockchainAction = async (blockchain: {
 
 ---
 
-## 4. Luồng đăng nhập bằng ví (`/v1/auth/login-by-wallet`)
+## 4. Luồng đăng nhập bằng ví (`/v1/auth/login/wallet`)
 
 > Backend hiện hỗ trợ cả 2 path:
 >
-> - `POST /v1/auth/login-by-wallet`
 > - `POST /v1/auth/login/wallet`
+> - `POST /v1/auth/login-by-wallet`
 >
-> Khuyến nghị frontend dùng path mới: `login-by-wallet`.
+> Khuyến nghị frontend dùng path chính: `login/wallet`.
 
 ## 4.1 Flow 2 bước
 
 ### Bước A - Lấy nonce
 
 ```http
-POST /v1/auth/login-by-wallet
+POST /v1/auth/login/wallet
 Content-Type: application/json
 
 {
@@ -250,7 +250,7 @@ Content-Type: application/json
 Response thực tế:
 
 ```ts
-const res = await api.post('/auth/login-by-wallet', { walletAddress })
+const res = await api.post('/auth/login/wallet', { walletAddress })
 const payload = res.data.data
 const nonce = payload.nonce
 ```
@@ -265,7 +265,7 @@ const signature = await signer.signMessage(nonce)
 ### Bước C - Gửi lại chữ ký để login
 
 ```http
-POST /v1/auth/login-by-wallet
+POST /v1/auth/login/wallet
 Content-Type: application/json
 
 {
@@ -303,7 +303,7 @@ const registrationSignature = await signer.signMessage(registrationMessage)
 Sau đó gửi kèm ở bước login phase 2:
 
 ```ts
-await api.post('/auth/login-by-wallet', {
+await api.post('/auth/login/wallet', {
   walletAddress,
   signature,
   registrationSignature,
@@ -446,6 +446,25 @@ const appointments = res.data.data
 ---
 
 ## 8. Luồng Doctor: tạo hồ sơ bệnh án ban đầu
+
+## 8.0 Lấy toàn bộ hồ sơ bệnh án của một bệnh nhân
+
+Endpoint:
+
+- `GET /v1/doctors/patients/:patientId/medical-records`
+
+Mục đích frontend:
+
+- mở tab lịch sử hồ sơ của một bệnh nhân cụ thể
+- render các record cũ trước khi bác sĩ tạo record mới
+- chỉ hoạt động nếu doctor hiện tại còn quyền truy cập hồ sơ bệnh nhân trên Blockchain
+
+Ví dụ đọc payload:
+
+```ts
+const res = await api.get(`/doctors/patients/${patientId}/medical-records`)
+const records = res.data.data
+```
 
 ## 8.1 Tạo record off-chain
 
@@ -760,7 +779,7 @@ Frontend nên render:
 
 | Vai trò | Endpoint | Mục đích | Có MetaMask không |
 | --- | --- | --- | --- |
-| Auth | `POST /v1/auth/login-by-wallet` | lấy nonce / verify chữ ký login | Có, ở bước ký nonce |
+| Auth | `POST /v1/auth/login/wallet` | lấy nonce / verify chữ ký login | Có, ở bước ký nonce |
 | Patient | `POST /v1/patients/appointments` | tạo lịch + lấy metadata grant | Có |
 | Patient | `GET /v1/patients/appointments/:id/prepare-grant-access` | lấy lại metadata grant | Có |
 | Patient | `POST /v1/patients/appointments/:id/verify-grant-access` | verify tx grant | Không ký ở đây, chỉ gửi `txHash` |
@@ -768,6 +787,7 @@ Frontend nên render:
 | Patient | `GET /v1/patients/appointments/:id/prepare-revoke-access` | lấy lại metadata revoke | Có |
 | Patient | `POST /v1/patients/appointments/:id/verify-revoke-access` | verify tx revoke | Không ký ở đây |
 | Doctor | `GET /v1/doctors/appointments` | lấy danh sách lịch | Không |
+| Doctor | `GET /v1/doctors/patients/:patientId/medical-records` | lấy toàn bộ hồ sơ của 1 bệnh nhân | Không |
 | Doctor | `POST /v1/doctors/patients/:patientId/medical-records` | tạo record + lấy metadata createRecord | Có |
 | Doctor | `POST /v1/doctors/medical-records/:id/verify-tx` | verify createRecord/closeRecord | Không ký ở đây |
 | Doctor | `PATCH /v1/doctors/medical-records/:id/diagnosis` | tạo diagnosisHash + metadata closeRecord | Có |
