@@ -5,6 +5,15 @@ import { patientModel } from '~/models/patient.model';
 import { doctorModel } from '~/models/doctor.model';
 import ApiError from '~/utils/ApiError';
 import { blockchainProvider } from '~/blockchains/provider';
+import { blockchainAbis, identityManagerContract } from '~/blockchains/contract';
+import { validateContractTransaction } from '~/utils/blockchainVerification';
+
+const BLOCKCHAIN_ROLE_ENUM = {
+    PATIENT: '1',
+    DOCTOR: '2',
+    LAB_TECH: '3',
+    ADMIN: '4',
+};
 
 // lấy ra toàn bộ user tồn tại
 const getUsers = async ({ status, page, limit, deleted }) => {
@@ -66,13 +75,21 @@ const approveUser = async ({ targetUserId, adminId }) => {
 
     // Lấy wallet address từ authProviders
     const walletProvider = user.authProviders.find(p => p.type === 'WALLET');
+    const blockchain = needsBlockchain && walletProvider?.walletAddress ? {
+        contractAddress: identityManagerContract.target,
+        method: user.role === userModel.USER_ROLES.PATIENT ? 'registerPatientGasless' : 'registerStaff',
+        args: user.role === userModel.USER_ROLES.PATIENT
+            ? [walletProvider.walletAddress, user.registrationSignature]
+            : [walletProvider.walletAddress, BLOCKCHAIN_ROLE_ENUM[user.role]],
+    } : null;
 
     return {
         message,
         needsBlockchain,
         role: user.role,
         targetWallet: walletProvider?.walletAddress,
-        registrationSignature: user.registrationSignature
+        registrationSignature: user.registrationSignature,
+        blockchain,
     };
 };
 
@@ -163,8 +180,42 @@ const softDeleteUser = async ({ targetUserId, adminId }) => {
 
 // Xác minh giao dịch Admin đã đăng ký Gasless cho Patient
 const verifyOnboarding = async ({ targetUserId, txHash, adminId }) => {
+    // 1. Lấy user mục tiêu và admin hiện tại để biết ai là đối tượng được đăng ký, ai là người phải ký tx.
     const user = await userModel.findById(targetUserId);
     if (!user) throw new ApiError(StatusCodes.NOT_FOUND, 'User không tồn tại');
+
+    const adminUser = await userModel.findById(adminId);
+    if (!adminUser) throw new ApiError(StatusCodes.NOT_FOUND, 'Admin không tồn tại');
+
+    // 2. Lấy ví admin và ví user mục tiêu để đối chiếu signer + calldata của transaction.
+    const adminWallet = adminUser.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
+    if (!adminWallet) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Admin chưa liên kết ví Blockchain');
+    }
+
+    const targetWallet = user.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
+    if (!targetWallet) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'User mục tiêu chưa liên kết ví Blockchain');
+    }
+
+    // 3. Dựa vào role để quyết định tx này phải là registerStaff hay registerPatientGasless.
+    const tx = await blockchainProvider.getTransaction(txHash);
+    const isStaffRegistration = [userModel.USER_ROLES.DOCTOR, userModel.USER_ROLES.LAB_TECH].includes(user.role);
+
+    validateContractTransaction({
+        tx,
+        abi: blockchainAbis.IdentityManager,
+        expectedContract: identityManagerContract.target,
+        expectedMethod: isStaffRegistration ? 'registerStaff' : 'registerPatientGasless',
+        expectedArgs: isStaffRegistration
+            ? [targetWallet, BLOCKCHAIN_ROLE_ENUM[user.role]]
+            : [targetWallet, user.registrationSignature],
+    });
+
+    // 4. Giao dịch hợp lệ vẫn phải do chính ví admin hiện tại ký.
+    if (tx.from.toLowerCase() !== adminWallet.toLowerCase()) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch blockchain không được ký bởi ví admin hiện tại');
+    }
 
     // Đợi Receipt từ Blockchain
     const receipt = await blockchainProvider.waitForTransaction(txHash);
@@ -182,7 +233,6 @@ const verifyOnboarding = async ({ targetUserId, txHash, adminId }) => {
         });
 
         // Ghi audit log
-        const isStaffRegistration = [userModel.USER_ROLES.DOCTOR, userModel.USER_ROLES.LAB_TECH].includes(user.role);
         await auditLogModel.createLog({
             userId: adminId,
             action: isStaffRegistration ? 'VERIFY_STAFF_REGISTRATION' : 'VERIFY_ONBOARDING',

@@ -6,8 +6,9 @@ import { patientModel } from '~/models/patient.model';
 import { auditLogModel } from '~/models/auditLog.model';
 import { userModel } from '~/models/user.model';
 import { generateDataHash } from '~/utils/algorithms';
-import { medicalLedgerContract, dynamicAccessControlContract } from '~/blockchains/contract';
+import { blockchainAbis, dynamicAccessControlContract, medicalLedgerContract } from '~/blockchains/contract';
 import { blockchainProvider } from '~/blockchains/provider';
+import { validateContractTransaction } from '~/utils/blockchainVerification';
 
 // Service tạo hồ sơ bệnh án
 const createNew = async (patientId, data, currentUser) => {
@@ -67,6 +68,11 @@ const createNew = async (patientId, data, currentUser) => {
         medicalRecordId: medicalRecord._id,
         patientWallet,
         recordHash,
+        blockchain: {
+            contractAddress: medicalLedgerContract.target,
+            method: 'createRecord',
+            args: [medicalRecord._id.toString(), patientWallet, recordHash],
+        },
     };
 };
 // Service chẩn đoán hồ sơ bệnh án
@@ -116,6 +122,11 @@ const diagnosis = async (medicalRecordId, data, currentUser) => {
         message: 'Chẩn đoán đã được lưu, vui lòng xác nhận giao dịch trên MetaMask',
         medicalRecordId,
         diagnosisHash,
+        blockchain: {
+            contractAddress: medicalLedgerContract.target,
+            method: 'closeRecord',
+            args: [medicalRecordId.toString(), diagnosisHash],
+        },
     };
 };
 
@@ -203,9 +214,66 @@ const verifyIntegrity = async (medicalRecordId) => {
 };
 
 // Xác minh giao dịch sau khi Frontend đã ký qua MetaMask
-const verifyTx = async (medicalRecordId, txHash) => {
+const verifyTx = async (medicalRecordId, txHash, currentUser) => {
+    // 1. Lấy hồ sơ bệnh án hiện tại để biết đang verify bước nào của vòng đời record.
     const medicalRecord = await medicalRecordModel.findOneById(medicalRecordId);
     if (!medicalRecord) throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy hồ sơ');
+
+    // 2. Suy ra ví bác sĩ hiện tại để kiểm tra signer tx.
+    const doctorUser = await userModel.findById(currentUser._id);
+    const doctorWallet = doctorUser?.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
+    if (!doctorWallet) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Bác sĩ chưa liên kết ví Blockchain');
+    }
+
+    // 3. Đọc transaction thô từ blockchain để đối chiếu contract call thật sự.
+    const tx = await blockchainProvider.getTransaction(txHash);
+
+    if (medicalRecord.status === 'CREATED') {
+        // 4A. Nếu record đang CREATED thì tx hợp lệ phải là createRecord với patientWallet + recordHash hiện tại.
+        const patient = await patientModel.findById(medicalRecord.patientId);
+        if (!patient) throw new ApiError(StatusCodes.NOT_FOUND, 'Bệnh nhân không tồn tại');
+
+        const patientUser = await userModel.findById(patient.userId);
+        const patientWallet = patientUser?.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
+        if (!patientWallet) {
+            throw new ApiError(StatusCodes.BAD_REQUEST, 'Bệnh nhân chưa liên kết ví Blockchain');
+        }
+
+        const recordHash = generateDataHash({
+            type: medicalRecord.type,
+            clinicalNote: medicalRecord.clinicalNote || medicalRecord.note || '',
+            patientId: medicalRecord.patientId.toString(),
+        });
+
+        validateContractTransaction({
+            tx,
+            abi: blockchainAbis.MedicalLedger,
+            expectedContract: medicalLedgerContract.target,
+            expectedMethod: 'createRecord',
+            expectedArgs: [medicalRecordId.toString(), patientWallet, recordHash],
+        });
+    } else if (medicalRecord.status === 'DIAGNOSED') {
+        // 4B. Nếu record đang DIAGNOSED thì tx hợp lệ phải là closeRecord với diagnosisHash hiện tại.
+        const diagnosisHash = generateDataHash({
+            diagnosis: medicalRecord.diagnosis,
+            diagnosisNote: medicalRecord.diagnosisNote || '',
+            testResultId: medicalRecord.testResultId.toString(),
+        });
+
+        validateContractTransaction({
+            tx,
+            abi: blockchainAbis.MedicalLedger,
+            expectedContract: medicalLedgerContract.target,
+            expectedMethod: 'closeRecord',
+            expectedArgs: [medicalRecordId.toString(), diagnosisHash],
+        });
+    }
+
+    // 5. Tx hợp lệ còn phải do đúng ví doctor hiện tại ký.
+    if (tx.from.toLowerCase() !== doctorWallet.toLowerCase()) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch blockchain không được ký bởi ví bác sĩ hiện tại');
+    }
 
     // Đợi Receipt từ Blockchain
     const receipt = await blockchainProvider.waitForTransaction(txHash);

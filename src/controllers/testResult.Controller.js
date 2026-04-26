@@ -33,8 +33,9 @@ const getAll = async (req, res, next) => {
 
 const verifyTx = async (req, res, next) => {
     try {
+        // Controller nhận txHash appendTestResult từ frontend và giao toàn bộ bước hậu kiểm cho service.
         const { txHash } = req.body;
-        const result = await testResultService.verifyTx(req.params.testResultId, txHash);
+        const result = await testResultService.verifyTx(req.params.testResultId, txHash, req.user);
         res.status(StatusCodes.OK).json(result);
     } catch (error) {
         next(error);

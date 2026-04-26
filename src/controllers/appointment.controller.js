@@ -130,7 +130,8 @@ const prepareGrantAccess = async (req, res, next) => {
 
 const verifyGrantAccess = async (req, res, next) => {
     try {
-        const result = await appointmentService.verifyGrantAccess(req.params.id, req.body.txHash);
+        // Controller chỉ chuyển appointmentId + txHash + người dùng hiện tại xuống service để service verify on-chain.
+        const result = await appointmentService.verifyGrantAccess(req.params.id, req.body.txHash, req.user);
         res.status(200).json(result);
     } catch (error) {
         next(error);
@@ -148,7 +149,8 @@ const prepareRevokeAccess = async (req, res, next) => {
 
 const verifyRevokeAccess = async (req, res, next) => {
     try {
-        const result = await appointmentService.verifyRevokeAccess(req.params.id, req.body.txHash);
+        // Tương tự grant access: controller không tự verify, chỉ điều phối dữ liệu cho service xử lý đầy đủ.
+        const result = await appointmentService.verifyRevokeAccess(req.params.id, req.body.txHash, req.user);
         res.status(200).json(result);
     } catch (error) {
         next(error);

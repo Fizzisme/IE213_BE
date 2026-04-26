@@ -45,5 +45,16 @@ export const blockchainContracts = {
     medicalLedgerContract,
 };
 
+export const blockchainAbis = {
+    IdentityManager: IdentityManagerABI,
+    DynamicAccessControl: DynamicAccessControlABI,
+    MedicalLedger: MedicalLedgerABI,
+};
+
+export const decodeContractCall = (abi, data) => {
+    const iface = new ethers.Interface(abi);
+    return iface.parseTransaction({ data });
+};
+
 
 

@@ -58,8 +58,9 @@ const verifyIntegrity = async (req, res, next) => {
 
 const verifyTx = async (req, res, next) => {
     try {
+        // Controller nhận txHash từ frontend sau khi MetaMask ký, rồi chuyển xuống service để verify createRecord/closeRecord.
         const { txHash } = req.body;
-        const result = await medicalRecordService.verifyTx(req.params.medicalRecordId, txHash);
+        const result = await medicalRecordService.verifyTx(req.params.medicalRecordId, txHash, req.user);
         res.status(StatusCodes.OK).json(result);
     } catch (error) {
         next(error);

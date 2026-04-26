@@ -76,6 +76,7 @@ const softDeleteUser = async (req, res, next) => {
 
 const verifyOnboarding = async (req, res, next) => {
     try {
+        // Controller gom targetUserId + txHash + admin hiện tại để service verify giao dịch onboarding trên chain.
         const result = await adminService.verifyOnboarding({
             targetUserId: req.params.id,
             txHash: req.body.txHash,

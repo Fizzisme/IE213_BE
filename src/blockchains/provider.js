@@ -127,9 +127,23 @@ const waitForTransaction = async (txHash, confirmations = 1, timeoutMs = 120000)
     }
 };
 
+const getTransaction = async (txHash) => {
+    if (!rpcProvider) throw new Error('RPC Provider not initialized');
+
+    await verifyChain(txHash);
+
+    const tx = await rpcProvider.getTransaction(txHash);
+    if (!tx) {
+        throw new Error('Transaction not found');
+    }
+
+    return tx;
+};
+
 export const blockchainProvider = {
     rpcProvider,
     verifyChain,
+    getTransaction,
     waitForTransaction,
     SEPOLIA_CHAIN_ID,
 };
