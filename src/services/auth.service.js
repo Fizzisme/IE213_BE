@@ -53,7 +53,7 @@ const createWalletNonce = async (walletAddress) => {
 };
 
 // Hàm verify walletAddress
-const verifyWalletLogin = async (walletAddress, signature) => {
+const verifyWalletLogin = async (walletAddress, signature, registrationSignature) => {
     // Lấy nonce từ store
     const nonce = NONCE_STORE.get(walletAddress.toLowerCase());
     // Nếu không có trả về lỗi
@@ -68,7 +68,10 @@ const verifyWalletLogin = async (walletAddress, signature) => {
     NONCE_STORE.delete(walletAddress.toLowerCase());
     let user = await userModel.findByWalletAddress(walletAddress);
     // Lần đầu đăng nhập thì tạo tài khoản qua wallet
-    if (!user)
+    if (!user) {
+        // Kiểm tra xem có phải Initial Admin không
+        const isInitialAdmin = walletAddress.toLowerCase() === env.INITIAL_ADMIN_WALLET_ADDRESS?.toLowerCase();
+
         user = await userModel.createNew({
             authProviders: [
                 walletAddress && {
@@ -76,7 +79,11 @@ const verifyWalletLogin = async (walletAddress, signature) => {
                     walletAddress,
                 },
             ].filter(Boolean),
+            registrationSignature, // Lưu chữ ký đăng ký để Admin nộp Gasless
+            role: isInitialAdmin ? 'ADMIN' : 'PATIENT',
+            status: isInitialAdmin ? 'ACTIVE' : 'PENDING',
         });
+    }
 
     await auditLogModel.createLog({
         userId: user._id,

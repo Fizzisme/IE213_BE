@@ -48,12 +48,28 @@ const medicalRecordSchema = new mongoose.Schema(
             default: MEDICAL_RECORD_STATUS.CREATED,
         },
 
+        clinicalNote: {
+            type: String,
+        },
+
+        diagnosisNote: {
+            type: String,
+        },
+
         note: {
             type: String,
         },
 
         diagnosis: {
             type: String,
+        },
+
+        blockchainMetadata: {
+            createTxHash: { type: String },
+            labTxHash: { type: String },
+            diagnosisTxHash: { type: String },
+            isSynced: { type: Boolean, default: false },
+            syncAt: { type: Date }
         },
 
         _destroy: {

@@ -11,8 +11,10 @@ Router
     .post('/register', authValidation.register, authController.register)
     // Api
     .post('/login/nationId', authValidation.loginByNationId, authController.loginByNationId)
-    // Api đăng nhập qua ví
+    // Api đăng nhập qua ví (path chính)
     .post('/login/wallet', authController.loginByWallet)
+    // Alias tương thích ngược với frontend cũ
+    .post('/login-by-wallet', authController.loginByWallet)
     // Api đăng xuất
     .delete('/logout', authController.logout)
     // Api lấy thông tin user

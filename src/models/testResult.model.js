@@ -21,6 +21,12 @@ const testResultSchema = new mongoose.Schema(
         },
         rawData: { type: Object },
         aiAnalysis: { type: Object },
+        blockchainMetadata: {
+            isSynced: { type: Boolean, default: false },
+            txHash: { type: String },
+            onChainHash: { type: String },
+            syncAt: { type: Date }
+        },
         _destroy: {
             type: Boolean,
             default: false,

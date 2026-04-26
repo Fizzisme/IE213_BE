@@ -1,8 +1,42 @@
 /**
  * @swagger
- * /v1/admin/users:
+ * components:
+ *   schemas:
+ *     AdminApprovePayload:
+ *       type: object
+ *       properties:
+ *         message:
+ *           type: string
+ *           example: Vui lòng xác nhận đăng ký vai trò trên MetaMask
+ *         needsBlockchain:
+ *           type: boolean
+ *           example: true
+ *         role:
+ *           type: string
+ *           example: DOCTOR
+ *         targetWallet:
+ *           type: string
+ *           nullable: true
+ *           example: 0xabcdefabcdefabcdefabcdefabcdefabcdefabcd
+ *         registrationSignature:
+ *           type: string
+ *           nullable: true
+ *         blockchain:
+ *           nullable: true
+ *           allOf:
+ *             - $ref: '#/components/schemas/BlockchainAction'
+ *             - type: object
+ *               properties:
+ *                 method:
+ *                   type: string
+ *                   example: registerStaff
+ */
+
+/**
+ * @swagger
+ * /v1/admins/users:
  *   get:
- *     summary: Lấy danh sách user theo trạng thái (mặc định PENDING)
+ *     summary: Lấy danh sách user theo trạng thái hoặc deleted flag
  *     tags: [Admin]
  *     security:
  *       - bearerAuth: []
@@ -12,19 +46,17 @@
  *         schema:
  *           type: string
  *           enum: [PENDING, ACTIVE, REJECTED, INACTIVE]
- *         description: Lọc theo trạng thái (mặc định PENDING)
+ *         description: Lọc theo trạng thái, mặc định PENDING
  *       - in: query
  *         name: page
  *         schema:
  *           type: integer
  *           default: 1
- *         description: Số trang
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
  *           default: 10
- *         description: Số lượng user mỗi trang
  *       - in: query
  *         name: deleted
  *         schema:
@@ -33,30 +65,15 @@
  *     responses:
  *       200:
  *         description: Danh sách user phân trang
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 data:
- *                   type: array
- *                   items:
- *                     type: object
- *                 total:
- *                   type: integer
- *                 page:
- *                   type: integer
- *                 limit:
- *                   type: integer
  *       401:
- *         description: Unauthorized - Token không hợp lệ hoặc hết hạn
+ *         description: Unauthorized
  *       403:
  *         description: Forbidden - Không phải ADMIN
  */
 
 /**
  * @swagger
- * /v1/admin/users/{id}:
+ * /v1/admins/users/{id}:
  *   get:
  *     summary: Xem chi tiết 1 user
  *     tags: [Admin]
@@ -72,19 +89,15 @@
  *     responses:
  *       200:
  *         description: Chi tiết user
- *       401:
- *         description: Unauthorized - Token không hợp lệ hoặc hết hạn
- *       403:
- *         description: Forbidden - Không phải ADMIN
  *       404:
  *         description: User không tồn tại
  */
 
 /**
  * @swagger
- * /v1/admin/users/{id}/approve:
+ * /v1/admins/users/{id}/approve:
  *   patch:
- *     summary: Duyệt user → ACTIVE
+ *     summary: Duyệt user và trả metadata blockchain nếu cần admin ký MetaMask
  *     tags: [Admin]
  *     security:
  *       - bearerAuth: []
@@ -97,20 +110,67 @@
  *         description: ID của user cần duyệt
  *     responses:
  *       200:
- *         description: User approved successfully
- *       401:
- *         description: Unauthorized - Token không hợp lệ hoặc hết hạn
- *       403:
- *         description: Forbidden - Không phải ADMIN
+ *         description: Trả về thông tin để admin ký MetaMask nếu cần sync blockchain
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiEnvelope'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/AdminApprovePayload'
+ *             example:
+ *               statusCode: 200
+ *               message: Success
+ *               data:
+ *                 message: Vui lòng xác nhận đăng ký vai trò trên MetaMask
+ *                 needsBlockchain: true
+ *                 role: DOCTOR
+ *                 targetWallet: 0xabcdefabcdefabcdefabcdefabcdefabcdefabcd
+ *                 registrationSignature: null
+ *                 blockchain:
+ *                   contractAddress: 0x1234567890abcdef1234567890abcdef12345678
+ *                   method: registerStaff
+ *                   args:
+ *                     - 0xabcdefabcdefabcdefabcdefabcdefabcdefabcd
+ *                     - '2'
  *       404:
  *         description: User không tồn tại
  *       409:
- *         description: Conflict - User không ở trạng thái PENDING
+ *         description: User không ở trạng thái PENDING
  */
 
 /**
  * @swagger
- * /v1/admin/users/{id}/reject:
+ * /v1/admins/users/{id}/verify-onboarding:
+ *   post:
+ *     summary: Verify giao dịch admin đăng ký patient gasless hoặc staff role trên Blockchain
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/VerifyTxRequest'
+ *     responses:
+ *       200:
+ *         description: Verify thành công và user được ACTIVE + synced
+ *       400:
+ *         description: Tx sai contract, sai method, sai args hoặc sai ví signer admin
+ */
+
+/**
+ * @swagger
+ * /v1/admins/users/{id}/reject:
  *   patch:
  *     summary: Từ chối user → REJECTED
  *     tags: [Admin]
@@ -134,28 +194,24 @@
  *             properties:
  *               reason:
  *                 type: string
- *                 example: "Thông tin không hợp lệ"
+ *                 example: Thông tin không hợp lệ
  *                 description: Lý do từ chối (tối thiểu 3 ký tự)
  *     responses:
  *       200:
  *         description: User rejected
- *       401:
- *         description: Unauthorized - Token không hợp lệ hoặc hết hạn
- *       403:
- *         description: Forbidden - Không phải ADMIN
  *       404:
  *         description: User không tồn tại
  *       409:
- *         description: Conflict - User không ở trạng thái PENDING
+ *         description: User không ở trạng thái PENDING
  *       422:
- *         description: Validation error - Lý do không hợp lệ
+ *         description: Validation error
  */
 
 /**
  * @swagger
- * /v1/admin/users/{id}/re-review:
+ * /v1/admins/users/{id}/re-review:
  *   patch:
- *     summary: Phục hồi user REJECTED → PENDING (xét duyệt lại)
+ *     summary: Phục hồi user REJECTED → PENDING
  *     tags: [Admin]
  *     security:
  *       - bearerAuth: []
@@ -165,23 +221,18 @@
  *         required: true
  *         schema:
  *           type: string
- *         description: ID của user cần phục hồi
  *     responses:
  *       200:
  *         description: User chuyển về PENDING
- *       401:
- *         description: Unauthorized - Token không hợp lệ hoặc hết hạn
- *       403:
- *         description: Forbidden - Không phải ADMIN
  *       404:
  *         description: User không tồn tại
  *       409:
- *         description: Conflict - User không ở trạng thái REJECTED
+ *         description: User không ở trạng thái REJECTED
  */
 
 /**
  * @swagger
- * /v1/admin/users/{id}/soft-delete:
+ * /v1/admins/users/{id}/soft-delete:
  *   delete:
  *     summary: Soft delete user + cascade xóa theo role
  *     tags: [Admin]
@@ -197,12 +248,8 @@
  *     responses:
  *       200:
  *         description: User đã bị soft delete
- *       401:
- *         description: Unauthorized - Token không hợp lệ hoặc hết hạn
- *       403:
- *         description: Forbidden - Không phải ADMIN
  *       404:
  *         description: User không tồn tại
  *       409:
- *         description: Conflict - User đã bị xóa trước đó
+ *         description: User đã bị xóa trước đó
  */

@@ -2,6 +2,7 @@
 
 export const WHITELIST_DOMAINS = [
     // them [domain];
+    'https://aegitas.vercel.app/',
     'http://localhost:5173',
 ];
 export const AI_SERVICE_URL = 'https://fizz09092005-ie213.hf.space/predict';
