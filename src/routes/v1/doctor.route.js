@@ -6,6 +6,7 @@ import { medicalRecordValidation } from '~/validations/medicalRecord.validation'
 import { testResultController } from '~/controllers/testResult.Controller';
 import { patientController } from '~/controllers/patient.controller';
 import { doctorController } from '~/controllers/doctor.controller';
+import { appointmentController } from '~/controllers/appointment.controller';
 
 const Router = express.Router();
 
@@ -38,5 +39,10 @@ Router
         medicalRecordController.diagnosis,
     )
     // Api lấy thông tin bản thân
-    .get('/me', doctorController.getMyProfile);
+    .get('/me', doctorController.getMyProfile)
+    // Api lấy lịch hẹn
+    .get('/appointments', appointmentController.getAppointments)
+    // Api cập nht trạng thái appointment
+    .patch('/appointments/:appointmentId/update-status', appointmentController.updateStatus);
+
 export const doctorRoute = Router;

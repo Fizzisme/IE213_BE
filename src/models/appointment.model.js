@@ -30,7 +30,6 @@ const appointmentSchema = new mongoose.Schema(
             required: true,
         },
         patientDescription: String,
-        description: String,
         price: Number,
         status: {
             type: String,
@@ -80,7 +79,12 @@ const findOneAndUpdateAppointment = (filter, update, options = {}) => {
 
 const find = async (data) => {
     return await AppointmentModel.find(data);
-}
+};
+
+const getAppointments = async () => {
+    return await AppointmentModel.find({});
+};
+
 export const appointmentModel = {
     APPOINTMENT_STATUS,
     AppointmentModel,
@@ -88,5 +92,6 @@ export const appointmentModel = {
     getAppointmentsByPatientId,
     getAppointmentById,
     findOneAndUpdateAppointment,
-    find
+    find,
+    getAppointments,
 };

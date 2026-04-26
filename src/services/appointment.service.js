@@ -1,9 +1,10 @@
 import { appointmentModel } from '~/models/appointment.model';
 import { serviceModel } from '~/models/service.model';
+import { StatusCodes } from 'http-status-codes';
+import ApiError from '~/utils/ApiError';
 
 const createAppointment = async (data, patientId) => {
-    const { appointmentDateTime, serviceId, description } = data;
-
+    const { appointmentDateTime, serviceId, patientDescription } = data;
     // validate
     if (!appointmentDateTime || !serviceId) {
         throw new Error('Thiếu dữ liệu');
@@ -22,11 +23,17 @@ const createAppointment = async (data, patientId) => {
         patientId: patientId,
         serviceId,
         appointmentDateTime: appointmentDate,
-        description,
+        patientDescription,
         price: service.price,
     });
 
     return newAppointment;
+};
+
+const getAppointments = async () => {
+    const appointments = await appointmentModel.getAppointments();
+    if (!appointments) throw new ApiError(StatusCodes.NOT_FOUND, 'Không có danh sách lịch hẹn');
+    return appointments;
 };
 
 const getAppointmentsByPatient = async (patientId) => {
@@ -50,7 +57,7 @@ const cancelMyAppointment = async (appointmentId, patientId) => {
 };
 
 const rescheduleMyAppointment = async (appointmentId, patientId, data) => {
-    console.log()
+    console.log();
     const updated = await appointmentModel.findOneAndUpdateAppointment(
         {
             _id: appointmentId,
@@ -71,9 +78,27 @@ const rescheduleMyAppointment = async (appointmentId, patientId, data) => {
 
     return updated;
 };
+
+const updateStatus = async (appointmentId, payload, userId) => {
+    const appointment = await appointmentModel.findOneAndUpdateAppointment(
+        {
+            _id: appointmentId,
+        },
+        {
+            ...payload,
+            doctorId: userId,
+        },
+    );
+    if (!appointment) throw new ApiError(StatusCodes.BAD_REQUEST, 'Cập nhật thất bại');
+
+    return 'Cập nhật thành công';
+};
+
 export const appointmentService = {
     createAppointment,
     getAppointmentsByPatient,
     cancelMyAppointment,
     rescheduleMyAppointment,
+    getAppointments,
+    updateStatus,
 };

@@ -1,6 +1,7 @@
 import { appointmentService } from '~/services/appointment.service';
 import { patientModel } from '~/models/patient.model';
 import { notificationService } from '~/services/notification.service';
+import { StatusCodes } from 'http-status-codes';
 const createAppointment = async (req, res) => {
     try {
         const userId = req.user._id;
@@ -18,10 +19,6 @@ const createAppointment = async (req, res) => {
             refModel: 'appointments',
         };
         const noti = await notificationService.createNotification(notiPayload);
-        console.log('[NOTI] Created successfully', {
-            notiId: noti._id,
-            receiverId: noti.receiverId,
-        });
         return res.status(201).json({
             message: 'Đặt lịch thành công',
             data: result,
@@ -36,9 +33,7 @@ const createAppointment = async (req, res) => {
 const getMyAppointments = async (req, res) => {
     try {
         const userId = req.user._id;
-        console.log(userId);
         const patient = await patientModel.findByUserId(userId);
-        console.log(patient);
         const result = await appointmentService.getAppointmentsByPatient(patient._id);
         return res.status(200).json(result);
     } catch (error) {
@@ -81,7 +76,6 @@ const cancelMyAppointment = async (req, res) => {
 
 const rescheduleMyAppointment = async (req, res) => {
     try {
-        console.log(req.body);
         const appointmentId = req.params.id;
         const patient = await patientModel.findByUserId(req.user._id);
         const patientId = patient._id;
@@ -102,7 +96,7 @@ const rescheduleMyAppointment = async (req, res) => {
                 rescheduledAt: new Date(),
             },
         });
-        console.log(result);
+
         return res.status(200).json(result);
     } catch (e) {
         return res.status(e.statusCode || 500).json({
@@ -110,11 +104,32 @@ const rescheduleMyAppointment = async (req, res) => {
         });
     }
 };
+
+const getAppointments = async (req, res, next) => {
+    try {
+        const result = await appointmentService.getAppointments();
+        return res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+const updateStatus = async (req, res, next) => {
+    try {
+        const appointmentId = req.params.appointmentId;
+        const result = await appointmentService.updateStatus(appointmentId, req.body, req.user._id);
+
+        return res.status(StatusCodes.OK).json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
 export const appointmentController = {
     createAppointment,
     getMyAppointments,
     cancelMyAppointment,
     rescheduleMyAppointment,
+    getAppointments,
+    updateStatus,
 };
-
-
