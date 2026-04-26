@@ -35,9 +35,7 @@ const createAppointment = async (req, res) => {
 const getMyAppointments = async (req, res) => {
     try {
         const userId = req.user._id;
-        console.log(userId);
         const patient = await patientModel.findByUserId(userId);
-        console.log(patient);
         const result = await appointmentService.getAppointmentsByPatient(patient._id);
         return res.status(200).json(result);
     } catch (error) {
