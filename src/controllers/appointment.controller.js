@@ -61,7 +61,7 @@ const cancelMyAppointment = async (req, res) => {
             event: 'APPOINTMENT_CANCELLED',
             title: 'Lịch khám đã hủy',
             content: 'Bạn đã hủy lịch khám thành công. Mong sớm được phục vụ bạn lần sau.',
-            refId: result._id,
+            refId: result.appointment._id,
             refModel: 'appointments',
             metadata: {
                 cancelDate: new Date(),
@@ -110,6 +110,15 @@ const rescheduleMyAppointment = async (req, res) => {
     }
 };
 
+const getDoctorAppointments = async (req, res, next) => {
+    try {
+        const result = await appointmentService.getAppointmentsByDoctor(req.user._id);
+        res.status(200).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
 const prepareGrantAccess = async (req, res, next) => {
     try {
         const result = await appointmentService.prepareGrantAccess(req.params.id);
@@ -149,6 +158,7 @@ const verifyRevokeAccess = async (req, res, next) => {
 export const appointmentController = {
     createAppointment,
     getMyAppointments,
+    getDoctorAppointments,
     cancelMyAppointment,
     rescheduleMyAppointment,
     prepareGrantAccess,

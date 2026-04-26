@@ -98,5 +98,31 @@ Hệ thống cung cấp một công cụ "So khớp sự thật" cực kỳ mạ
 3.  **Hợp nhất UX:** Đặt lịch đi kèm cấp quyền, Hủy lịch đi kèm thu hồi.
 4.  **Audit Trail tập trung:** Mọi `txHash` của cả Bác sĩ và Lab Tech đều được quy về một mối trong bảng Hồ sơ bệnh án.
 
+## 5. KẾT LUẬN (CONCLUSION)
+
+### 5.1 Ưu điểm
+*   **Bảo vệ danh tính người dùng ở mức độ cao:** Hệ thống áp dụng mô hình "Ví là Danh tính" thông qua hợp đồng `IdentityManager`. Thay vì lưu trữ các thông tin cá nhân nhạy cảm như email hay mật khẩu, danh tính người dùng được gắn liền với địa chỉ ví Ethereum. Việc sử dụng cơ chế **Gasless Onboarding** giúp bệnh nhân tham gia hệ thống mà không cần sở hữu ETH, đồng thời bảo đảm quyền ẩn danh tương đối khi tương tác với mạng lưới y tế.
+*   **Xác thực tính toàn vẹn dữ liệu đa lớp (Hash-Chaining):** Cơ chế khóa hash ba lớp (`recordHash`, `testResultHash`, `diagnosisHash`) neo chặt dữ liệu tại từng giai đoạn của quy trình y tế lên Blockchain. Bất kỳ sự thay đổi nào đối với dữ liệu Off-chain trong MongoDB — dù chỉ một ký tự — đều bị phát hiện ngay lập tức thông qua hàm `verifyIntegrity`. Đây là bằng chứng kỹ thuật không thể chối cãi, bảo vệ cả bệnh nhân lẫn bác sĩ khỏi các tranh chấp về tính xác thực của hồ sơ.
+*   **Trao quyền kiểm soát dữ liệu về tay bệnh nhân:** Thông qua hợp đồng `DynamicAccessControl`, bệnh nhân là người duy nhất có quyền quyết định bác sĩ nào được xem hồ sơ của mình. Đặc biệt, hệ thống đã tối ưu hóa luồng **1-Transaction UX**, cho phép cấp quyền ngay khi đặt lịch và thu hồi quyền ngay khi hủy lịch. Quyền này tự động hết hạn sau 24 giờ nhờ cơ chế **Lazy Evaluation** trên Blockchain, ngăn chặn việc rò rỉ dữ liệu dài hạn.
+*   **Kiến trúc lai tối ưu hiệu năng và bảo mật:** Mô hình Hybrid On-chain/Off-chain cho phép hệ thống tận dụng tốc độ của MongoDB cho các thao tác đọc/ghi thông thường, trong khi Blockchain đảm nhận vai trò neo chứng thực cho các sự kiện quan trọng. Người dùng trải nghiệm tốc độ phản hồi nhanh nhưng vẫn được bảo đảm bởi tính bất biến của Web3.
+*   **Nhật ký kiểm toán minh bạch và tập trung:** Mọi sự kiện từ lúc khám bệnh đến chẩn đoán đều được ghi lại dưới dạng Event On-chain. Backend đã được tối ưu để tập trung hóa toàn bộ lịch sử giao dịch (`createTxHash`, `labTxHash`, `diagnosisTxHash`) vào duy nhất một hồ sơ bệnh án, giúp việc truy vết "ai làm gì, lúc nào" trở nên minh bạch và dễ dàng kiểm toán.
+*   **Phân quyền và ràng buộc trạng thái nghiêm ngặt (Strict Flow):** Hợp đồng `MedicalLedger` và logic Backend ép buộc hồ sơ phải đi đúng trình tự: `Khởi tạo -> Xét nghiệm -> Chẩn đoán`. Bác sĩ không thể chẩn đoán nếu chưa có kết quả từ Lab Tech, và chỉ bác sĩ khởi tạo hồ sơ mới có quyền đóng hồ sơ (`closeRecord`). Điều này loại bỏ hoàn toàn khả năng can thiệp chéo hoặc nhập sai quy trình.
+
+### 5.2 Hạn chế
+*   **Phụ thuộc vào tình trạng mạng Blockchain:** Các thao tác quan trọng như duyệt tài khoản hay chốt bệnh án đều yêu cầu giao dịch On-chain được xác nhận. Khi mạng Ethereum (Sepolia) gặp tải cao, những thao tác này có thể bị chậm hoặc gián đoạn.
+*   **Rủi ro mất quyền truy cập vĩnh viễn:** Do hệ thống không sử dụng cơ chế khôi phục mật khẩu truyền thống, nếu bệnh nhân làm mất Private Key hoặc cụm từ khôi phục ví MetaMask, họ sẽ mất vĩnh viễn quyền truy cập vào hồ sơ sức khỏe của mình.
+*   **Rào cản tiếp cận với người dùng phổ thông:** Người dùng vẫn cần biết cách cài đặt và sử dụng ví MetaMask cơ bản. Dù đã có Gasless Onboarding, việc ký xác nhận vẫn là một khái niệm mới mẻ với bệnh nhân lớn tuổi.
+*   **Tính toàn vẹn phụ thuộc vào khâu nhập liệu ban đầu:** Blockchain chỉ đảm bảo dữ liệu không bị sửa đổi sau khi đã ghi. Nếu bác sĩ hoặc kỹ thuật viên cố tình nhập sai thông số ngay từ đầu, hệ thống sẽ trung thực bảo toàn dữ liệu sai đó.
+*   **Phạm vi mô phỏng:** Hệ thống hiện tại đang tập trung vào quy trình khép kín tại một cơ sở y tế với sự hỗ trợ của AI cho bệnh tiểu đường. Các kịch bản liên viện hoặc xét nghiệm khẩn cấp ngoài quy trình chưa được khai thác sâu.
+*   **Chưa mã hóa dữ liệu y tế lưu trữ (At-Rest):** Nội dung hồ sơ hiện được lưu trong MongoDB dưới dạng Plaintext (chỉ băm Hash lên Blockchain). Đây là điểm cần cải thiện để đáp ứng các tiêu chuẩn bảo mật y tế khắt khe hơn như HIPAA.
+
+### 5.3 Hướng phát triển
+*   **Mã hóa dữ liệu lưu trữ (AES-256):** Áp dụng mã hóa Field-level cho nội dung hồ sơ trong MongoDB. Chỉ những bên có khóa giải mã (được chia sẻ qua quyền truy cập Blockchain) mới có thể đọc được nội dung thật.
+*   **Tích hợp lưu trữ phi tập trung (IPFS):** Di chuyển các tệp tin y tế dung lượng lớn (X-quang, MRI) lên IPFS và lưu trữ CID (Content ID) lên chuỗi để đạt được tính phi tập trung hoàn toàn.
+*   **Cơ chế khôi phục tài khoản (Social Recovery):** Tích hợp mô hình ví trừu tượng hóa tài khoản (Account Abstraction) để cho phép khôi phục quyền truy cập thông qua người giám hộ khi mất ví.
+*   **Zero-Knowledge Proofs (ZKP):** Cho phép bệnh nhân chứng minh mình đủ điều kiện sức khỏe (ví dụ: đã tiêm chủng) mà không cần tiết lộ chi tiết toàn bộ hồ sơ bệnh án.
+*   **Triển khai trên Layer 2:** Chuyển sang các giải pháp như Arbitrum hoặc Optimism để giảm phí Gas và tăng tốc độ giao dịch cho các cơ sở y tế có lưu lượng bệnh nhân lớn.
+
 ---
-*Tài liệu này được soạn thảo để đảm bảo mọi bên liên quan (Bệnh nhân, Bác sĩ, Quản trị viên) đều nắm rõ quy trình vận hành và sự an toàn của dữ liệu y tế trên nền tảng Web3.*
+*Tài liệu này được soạn thảo để đảm bảo mọi bên liên quan đều nắm rõ quy trình vận hành và sự an toàn của dữ liệu y tế trên nền tảng Web3.*
+

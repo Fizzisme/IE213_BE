@@ -38,6 +38,7 @@ const createNew = async (patientId, data, currentUser) => {
         patientId,
         createdBy: currentUser._id,
         type: data.type,
+        clinicalNote: data.note,
         note: data.note,
         createdAt: new Date(),
     };
@@ -48,7 +49,7 @@ const createNew = async (patientId, data, currentUser) => {
     // --- BLOCKCHAIN HASH GENERATION ---
     const recordHash = generateDataHash({
         type: medicalRecord.type,
-        note: medicalRecord.note,
+        clinicalNote: medicalRecord.clinicalNote || medicalRecord.note || '',
         patientId: medicalRecord.patientId.toString(),
     });
 
@@ -58,7 +59,7 @@ const createNew = async (patientId, data, currentUser) => {
         action: 'CREATE_MEDICAL_RECORD',
         entityType: 'MEDICAL_RECORD',
         entityId: medicalRecord._id,
-        details: { note: `Doctor created new medical record, waiting for blockchain sync` },
+        details: { note: 'Doctor created new medical record, waiting for blockchain sync' },
     });
 
     return {
@@ -87,7 +88,7 @@ const diagnosis = async (medicalRecordId, data, currentUser) => {
     const updateRecord = {
         testResultId: data.testResultId,
         diagnosis: data.diagnosis,
-        note: data.note,
+        diagnosisNote: data.note,
         status: 'DIAGNOSED',
     };
 
@@ -98,7 +99,7 @@ const diagnosis = async (medicalRecordId, data, currentUser) => {
     // --- BLOCKCHAIN HASH GENERATION ---
     const diagnosisHash = generateDataHash({
         diagnosis: data.diagnosis,
-        note: data.note,
+        diagnosisNote: data.note || '',
         testResultId: data.testResultId.toString(),
     });
 
@@ -108,7 +109,7 @@ const diagnosis = async (medicalRecordId, data, currentUser) => {
         action: 'DIAGNOSIS_MEDICAL_RECORD',
         entityType: 'MEDICAL_RECORD',
         entityId: medicalRecordId,
-        details: { note: `Doctor diagnosis medical record, waiting for blockchain sync` },
+        details: { note: 'Doctor diagnosis medical record, waiting for blockchain sync' },
     });
 
     return {
@@ -126,7 +127,7 @@ const verifyIntegrity = async (medicalRecordId) => {
     // --- TẦNG 1: Kiểm tra Thông tin ban đầu (recordHash) ---
     const recordHash = generateDataHash({
         type: medicalRecord.type,
-        note: medicalRecord.note,
+        clinicalNote: medicalRecord.clinicalNote || medicalRecord.note || '',
         patientId: medicalRecord.patientId.toString(),
     });
 
@@ -180,7 +181,7 @@ const verifyIntegrity = async (medicalRecordId) => {
 
             const diagnosisHash = generateDataHash({
                 diagnosis: medicalRecord.diagnosis,
-                note: medicalRecord.note, // Note lúc này là note chẩn đoán
+                diagnosisNote: medicalRecord.diagnosisNote || '',
                 testResultId: testResultIdToHash,
             });
 
@@ -218,8 +219,9 @@ const verifyTx = async (medicalRecordId, txHash) => {
 
         if (medicalRecord.status === 'CREATED') {
             updateData['blockchainMetadata.createTxHash'] = txHash;
-        } else if (medicalRecord.status === 'HAS_RESULT') {
+        } else if (medicalRecord.status === 'WAITING_RESULT') {
             updateData['blockchainMetadata.labTxHash'] = txHash;
+            updateData['status'] = 'HAS_RESULT';
         } else if (medicalRecord.status === 'DIAGNOSED') {
             updateData['blockchainMetadata.diagnosisTxHash'] = txHash;
             // ĐỒNG BỘ TRẠNG THÁI: Blockchain chuyển sang COMPLETE thì Database cũng vậy

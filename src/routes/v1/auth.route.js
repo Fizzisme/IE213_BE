@@ -13,6 +13,7 @@ Router
     .post('/login/nationId', authValidation.loginByNationId, authController.loginByNationId)
     // Api đăng nhập qua ví
     .post('/login/wallet', authController.loginByWallet)
+    .post('/login-by-wallet', authController.loginByWallet)
     // Api đăng xuất
     .delete('/logout', authController.logout)
     .get('/me', verifyToken, authController.getMe);

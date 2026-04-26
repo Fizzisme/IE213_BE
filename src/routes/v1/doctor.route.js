@@ -14,6 +14,8 @@ const Router = express.Router();
 // Tất cả route /doctor/* đều phải qua verifyToken + requireDoctor
 Router.use(verifyToken, authorizeRoles('DOCTOR'));
 
+Router.get('/appointments', appointmentController.getDoctorAppointments);
+
 // Api lấy chi tiết hồ sơ bệnh án
 Router.get(
     '/medical-records/:medicalRecordId',

@@ -27,7 +27,7 @@ const approveUser = async (req, res, next) => {
     try {
         const result = await adminService.approveUser({
             targetUserId: req.params.id,
-            adminId: req.jwtDecoded._id,
+            adminId: req.user._id,
         });
         res.status(StatusCodes.OK).json(result);
     } catch (err) {
@@ -40,7 +40,7 @@ const rejectUser = async (req, res, next) => {
     try {
         const result = await adminService.rejectUser({
             targetUserId: req.params.id,
-            adminId: req.jwtDecoded._id,
+            adminId: req.user._id,
             reason: req.body.reason,
         });
         res.status(StatusCodes.OK).json(result);
@@ -54,7 +54,7 @@ const reReviewUser = async (req, res, next) => {
     try {
         const result = await adminService.reReviewUser({
             targetUserId: req.params.id,
-            adminId: req.jwtDecoded._id,
+            adminId: req.user._id,
         });
         res.status(StatusCodes.OK).json(result);
     } catch (err) {
@@ -66,7 +66,7 @@ const softDeleteUser = async (req, res, next) => {
     try {
         const result = await adminService.softDeleteUser({
             targetUserId: req.params.id,
-            adminId: req.jwtDecoded._id,
+            adminId: req.user._id,
         });
         res.status(StatusCodes.OK).json(result);
     } catch (err) {
@@ -79,7 +79,7 @@ const verifyOnboarding = async (req, res, next) => {
         const result = await adminService.verifyOnboarding({
             targetUserId: req.params.id,
             txHash: req.body.txHash,
-            adminId: req.jwtDecoded._id,
+            adminId: req.user._id,
         });
         res.status(StatusCodes.OK).json(result);
     } catch (err) {

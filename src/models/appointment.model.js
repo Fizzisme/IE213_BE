@@ -65,6 +65,17 @@ const getAppointmentsByPatientId = async (patientId) => {
         .lean();
 };
 
+const getAppointmentsByDoctorId = async (doctorId) => {
+    return await AppointmentModel.find({
+        doctorId,
+        deletedAt: null,
+    })
+        .populate('serviceId')
+        .populate('patientId')
+        .sort({ appointmentDateTime: -1 })
+        .lean();
+};
+
 const getAppointmentById = (id) => {
     return AppointmentModel.findById(id);
 };
@@ -85,6 +96,7 @@ export const appointmentModel = {
     AppointmentModel,
     createNew,
     getAppointmentsByPatientId,
+    getAppointmentsByDoctorId,
     getAppointmentById,
     findOneAndUpdateAppointment,
     find

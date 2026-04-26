@@ -182,15 +182,25 @@ const verifyOnboarding = async ({ targetUserId, txHash, adminId }) => {
         });
 
         // Ghi audit log
+        const isStaffRegistration = [userModel.USER_ROLES.DOCTOR, userModel.USER_ROLES.LAB_TECH].includes(user.role);
         await auditLogModel.createLog({
             userId: adminId,
-            action: 'VERIFY_ONBOARDING',
+            action: isStaffRegistration ? 'VERIFY_STAFF_REGISTRATION' : 'VERIFY_ONBOARDING',
             entityType: 'USER',
             entityId: targetUserId,
-            details: { txHash, note: `Admin verified gasless onboarding for patient ${targetUserId}` },
+            details: {
+                txHash,
+                role: user.role,
+                note: isStaffRegistration
+                    ? `Admin verified blockchain role registration for ${user.role} ${targetUserId}`
+                    : `Admin verified gasless onboarding for patient ${targetUserId}`,
+            },
         });
 
-        return 'Duyệt tài khoản và đồng bộ Blockchain thành công';
+        return {
+            message: 'Duyệt tài khoản và đồng bộ Blockchain thành công',
+            role: user.role,
+        };
     } else {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch trên Blockchain thất bại');
     }

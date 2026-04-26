@@ -48,6 +48,14 @@ const medicalRecordSchema = new mongoose.Schema(
             default: MEDICAL_RECORD_STATUS.CREATED,
         },
 
+        clinicalNote: {
+            type: String,
+        },
+
+        diagnosisNote: {
+            type: String,
+        },
+
         note: {
             type: String,
         },

@@ -99,11 +99,20 @@ const prepareGrantAccess = async (appointmentId) => {
  * Bước 2: Xác minh giao dịch grantAccess thành công trên Blockchain.
  */
 const verifyGrantAccess = async (appointmentId, txHash) => {
+    const appointment = await appointmentModel.getAppointmentById(appointmentId);
+    if (!appointment) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Lịch hẹn không tồn tại');
+    }
+
     const receipt = await blockchainProvider.waitForTransaction(txHash);
 
     if (receipt.status === 1) {
-        // Có thể cập nhật trạng thái appointment hoặc log lại
-        return 'Cấp quyền xem hồ sơ trên Blockchain thành công';
+        appointment.status = appointmentModel.APPOINTMENT_STATUS.CONFIRMED;
+        await appointment.save();
+        return {
+            message: 'Cấp quyền xem hồ sơ trên Blockchain thành công',
+            appointment,
+        };
     } else {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch cấp quyền thất bại');
     }
@@ -131,6 +140,15 @@ const getAppointmentsByPatient = async (patientId) => {
     return await appointmentModel.getAppointmentsByPatientId(patientId);
 };
 
+const getAppointmentsByDoctor = async (doctorUserId) => {
+    const doctorProfile = await doctorModel.DoctorModel.findOne({ userId: doctorUserId, deletedAt: null });
+    if (!doctorProfile) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy hồ sơ bác sĩ');
+    }
+
+    return await appointmentModel.getAppointmentsByDoctorId(doctorProfile._id);
+};
+
 /**
  * Bước 4: Xác minh giao dịch revokeAccess thành công trên Blockchain.
  */
@@ -152,8 +170,8 @@ const cancelMyAppointment = async (appointmentId, patientId) => {
     if (appointment.patientId.toString() !== patientId.toString()) {
         throw new ApiError(StatusCodes.FORBIDDEN, 'Bạn không có quyền hủy lịch này');
     }
-    if (appointment.status !== 'PENDING') {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Chỉ có thể hủy lịch đang chờ xác nhận');
+    if (![appointmentModel.APPOINTMENT_STATUS.PENDING, appointmentModel.APPOINTMENT_STATUS.CONFIRMED].includes(appointment.status)) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Chỉ có thể hủy lịch đang chờ hoặc đã xác nhận');
     }
 
     appointment.status = 'CANCELLED';
@@ -207,6 +225,7 @@ const rescheduleMyAppointment = async (appointmentId, patientId, data) => {
 export const appointmentService = {
     createAppointment,
     getAppointmentsByPatient,
+    getAppointmentsByDoctor,
     cancelMyAppointment,
     rescheduleMyAppointment,
     prepareGrantAccess,

@@ -83,7 +83,7 @@ const createNew = async (medicalRecordId, body, currentUser) => {
     });
 
     // Cập nhật trang thái hồ sơ bệnh án
-    await medicalRecordModel.update(medicalRecordId, { status: 'HAS_RESULT' });
+    await medicalRecordModel.update(medicalRecordId, { status: 'WAITING_RESULT' });
 
     // Tạo audit log
     await auditLogModel.createLog({
@@ -126,6 +126,7 @@ const verifyTx = async (testResultId, txHash) => {
         // Điều này giúp việc Audit Trail của 1 bệnh án được quy về một mối
         await medicalRecordModel.update(testResult.medicalRecordId, {
             'blockchainMetadata.labTxHash': txHash,
+            status: 'HAS_RESULT',
         });
 
         return 'Đồng bộ Blockchain thành công';
