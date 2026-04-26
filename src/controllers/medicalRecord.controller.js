@@ -23,7 +23,7 @@ const diagnosis = async (req, res, next) => {
 // Controller lấy chi tiết 1 hồ sơ bệnh án
 const getDetail = async (req, res, next) => {
     try {
-        const result = await medicalRecordService.getDetail(req.params.medicalRecordId);
+        const result = await medicalRecordService.getDetail(req.params.medicalRecordId, req.user);
         res.status(StatusCodes.OK).json(result);
     } catch (e) {
         next(e);
@@ -47,9 +47,41 @@ const getAll = async (req, res, next) => {
     }
 };
 
+const getPatientMedicalRecords = async (req, res, next) => {
+    try {
+        const result = await medicalRecordService.getPatientMedicalRecords(req.params.patientId, req.user);
+        res.status(StatusCodes.OK).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const verifyIntegrity = async (req, res, next) => {
+    try {
+        const result = await medicalRecordService.verifyIntegrity(req.params.medicalRecordId);
+        res.status(StatusCodes.OK).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const verifyTx = async (req, res, next) => {
+    try {
+        // Controller nhận txHash từ frontend sau khi MetaMask ký, rồi chuyển xuống service để verify createRecord/closeRecord.
+        const { txHash } = req.body;
+        const result = await medicalRecordService.verifyTx(req.params.medicalRecordId, txHash, req.user);
+        res.status(StatusCodes.OK).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const medicalRecordController = {
     createNew,
     diagnosis,
     getDetail,
     getAll,
+    getPatientMedicalRecords,
+    verifyIntegrity,
+    verifyTx,
 };

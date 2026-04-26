@@ -1,87 +1,71 @@
-### Bộ code base để bắt đầu học khóa Full Stack MERN Pro (VIẾT CÁC REST API CHUẨN CHỈNH) - Lập Trình qua dự án thực tế Trello Clone trên kênh YouTube TrungQuanDev của mình nhé các bạn!
-### Base project for my Full Stack MERN Pro Course - Build Trello App on YouTube!
+# ĐỒ ÁN MÔN HỌC IE213 - HỆ THỐNG QUẢN LÝ HỒ SƠ Y TẾ WEB3 (EHR)
 
-- Playlist khóa Pro: https://www.youtube.com/playlist?list=PLP6tw4Zpj-RJP2-YrhtkWqObMQ-AA4TDy
+Dự án này là hệ thống quản lý bệnh án điện tử tích hợp công nghệ Blockchain để đảm bảo tính toàn vẹn dữ liệu, quyền riêng tư bệnh nhân và minh bạch trong quy trình y tế.
 
-- Playlist khóa Advanced: https://youtube.com/playlist?list=PLP6tw4Zpj-RJbPQfTZ0eCAXH_mHQiuf2G&si=zmt9y6TYo-e3sIwv
+## 1. Thông tin Blockchain (Mandatory)
+- **Mạng thử nghiệm:** Ethereum Sepolia (ChainID: `11155111`)
+- **Explorer:** [Sepolia Etherscan](https://sepolia.etherscan.io/)
 
-### Hướng dẫn clone Repo code này về máy các bạn chuẩn nhất ở video này:
-
-- Cấu trúc dự án nâng cao, chuẩn thực tế, có Babel, ESLint...vv | NodeJS + MongoDB. Link: https://youtu.be/8hhXamKIdsY
-
----
-
-### 🎁 DOWNLOAD FULL SOURCE CODE của toàn bộ dự án (Pro & Advanced) cũng như Donate ủng hộ mình ly cafe nếu bạn muốn 🤝
-
-👉 Đầu tiên cần phải làm rõ một điều: Mình KHÔNG BÁN CODE cũng như KHÔNG BÁN KHÓA HỌC gì ở đây hết. Bởi vì mình đã cung cấp đầy đủ mọi tài nguyên cần thiết cho trường hợp bạn muốn học FREE Miễn Phí từ đầu rồi.
-
-👉 ĐIỀU QUAN TRỌNG TIẾP THEO: Bạn cần phải hiểu rõ về lý do tại sao mình lại chia ra 3 gói Donate cũng như sự khác nhau giữa 3 gói này là gì. Mọi thông tin mình đều đã công khai ở bài viết trên blog chính chủ từ mình nhé, bởi vì nội dung khá dài. Bạn nên dành thời gian đọc nó trước khi bắt đầu khóa học cực kỳ chất lượng này.
-
-👉 Link bài viết: 👇
-
-🌐 https://trungquandev.com/khoa-hoc-lap-trinh-full-stack-mern-100-du-an-thuc-te-chat-luong/
-
-**🥉 FREE PACK (No Sponsor)**
-
-• 🌟 Download on Ko-fi: https://ko-fi.com/s/8e56e2c5d0
-
-• 🌟 Download on Buy Me a Coffee: https://buymeacoffee.com/codetq/e/318762
-
-**🥈 GOLD PACK (Gold Sponsor)**
-
-• 🌟 Download on Ko-fi: https://ko-fi.com/s/e41c325ca4
-
-• 🌟 Download on Buy Me a Coffee: https://buymeacoffee.com/codetq/e/191152
-
-**🥇 DIAMOND PACK (Diamond Sponsor - VIP)**
-
-• 🌟 Download on Ko-fi: https://ko-fi.com/s/27670843df
-
-• 🌟 Download on Buy Me a Coffee: https://buymeacoffee.com/codetq/e/318750
-
-**🏆 HOẶC NẾU BẠN KHÔNG CÓ THẺ VISA THANH TOÁN QUỐC TẾ THÌ CÓ THỂ LIÊN HỆ TRỰC TIẾP VỚI MÌNH TẠI ĐÂY ĐỂ LẤY TÀI NGUYÊN HỌC TẬP NHÉ 👇**
-
-**🌐 Facebook TrungQuanDev: 👉 https://facebook.com/trungquandev**
-
-**👑 Lưu ý: Video hướng dẫn chi tiết cách Install Source Code (Pro & Advanced) đều đã có trong 2 Playlists của khóa học rồi nhé.**
+### Smart Contract Addresses:
+- **IdentityManager:** `0xBeDC86c7ed2D3BD50b1E06abC5Bb8e6438cFc424`
+- **DynamicAccessControl:** `0x3456d590C5e48bfA5057388457784564267F200c`
+- **MedicalLedger:** `0x78B739a403f4cE733cF6cD198427a5B006345aD6`
 
 ---
 
-### Requirements - Thông tin của bộ Code Base này - Chuẩn các phiên bản dưới đây để bắt đầu học: (Semantic Versioning)
+## 2. Hướng dẫn cài đặt & Chạy dự án
 
-```
-* nodejs >= 18.16.0
-* npm = v9.8.1
-* yarn = v1.22.19
+### Yêu cầu hệ thống:
+- Node.js >= 18.x
+- MongoDB Atlas (Off-chain storage)
+- Ví MetaMask (đã chuyển sang mạng Sepolia và có ETH testnet)
 
-* "express": "^4.18.2"
-* "nodemon": "^3.0.1"
-* "eslint": "^8.47.0"
+### Các bước khởi chạy:
+1. **Clone project:**
+   ```bash
+   git clone [link-repo]
+   cd IE213_BE
+   ```
+2. **Cài đặt thư viện:**
+   ```bash
+   npm install
+   ```
+3. **Cấu hình môi trường:**
+   Tạo file `.env` từ mẫu `.env.example` và điền các thông số:
+   - `MONGODB_URI`: Link kết nối MongoDB Atlas.
+   - `BLOCKCHAIN_RPC_URL`: Link Alchemy/Infura Sepolia.
+   - `ADMIN_PRIVATE_KEY`: Private key ví admin (để deploy/quản trị).
+   - `IDENTITY_MANAGER_ADDRESS`: Địa chỉ contract Identity.
+   - (Xem thêm file `docs/DOCS_BACKEND_BLOCKCHAIN.md` để biết chi tiết)
 
-* "@babel/runtime": "^7.22.10"
-* "@babel/cli": "^7.22.10"
-* "@babel/core": "^7.22.10"
-* "@babel/eslint-parser": "^7.22.10"
-* "@babel/node": "^7.22.10"
-* "@babel/plugin-transform-runtime": "^7.22.10"
-* "@babel/preset-env": "^7.22.10"
-* "babel-plugin-module-resolver": "^5.0.0"
-```
+4. **Khởi động server:**
+   ```bash
+   npm run dev
+   ```
 
-### About Me - Thông tin về mình:
+---
 
-Author: **Trungquandev - Một Lập Trình Viên** && **CodeTQ - ASMR Programming**
+## 3. Tối ưu kỹ thuật (Key Features)
 
-Blog: https://trungquandev.com/
+Dự án đáp ứng các tiêu chuẩn kỹ thuật nâng cao của môn học IE213:
 
-CV: https://cv.trungquandev.com/
+### A. Cơ chế Fallback RPC (Độ ổn định)
+Hệ thống sử dụng mảng đa RPC URLs. Khi một node RPC (như Alchemy) bị lỗi hoặc quá tải, Backend sẽ tự động chuyển sang các node dự phòng (Infura, Public Nodes) mà không làm gián đoạn ứng dụng.
 
-YouTube 01 (Trungquandev - Một Lập Trình Viên): https://www.youtube.com/@trungquandev
+### B. Bảo mật "Zero-Key Server"
+Backend hoạt động ở chế độ **Read-only**. Tuyệt đối không lưu Private Key người dùng trên server. Mọi giao dịch thay đổi dữ liệu đều do người dùng trực tiếp xác nhận qua MetaMask.
 
-YouTube 02 (CodeTQ - ASMR Programming): https://www.youtube.com/@code-tq
+### C. Tính toàn vẹn dữ liệu (Hash-Chaining)
+Áp dụng kỹ thuật móc xích mã băm (Keccak256). Mã băm của chẩn đoán bao gồm mã băm của kết quả xét nghiệm và triệu chứng ban đầu. Điều này tạo ra bằng chứng không thể chối bỏ trên Blockchain cho toàn bộ vòng đời hồ sơ bệnh án.
 
-"Learning new everyday not the copycat of yesterday!"
+### D. Xác thực Web3 (Nonce-based Signature)
+Hệ thống đăng nhập không dùng mật khẩu truyền thống, mà sử dụng cơ chế ký thông điệp bằng ví (EIP-191) để xác thực định danh người dùng một cách bảo mật nhất.
 
-"A bit of fragrance clings to the hand that gives flowers!"
+---
 
-Thanks for watching!
+## 4. Tài liệu hướng dẫn
+- [Hướng dẫn cho Frontend](docs/DOCS_FRONTEND_WEB3.md)
+- [Hướng dẫn cho Backend](docs/DOCS_BACKEND_BLOCKCHAIN.md)
+
+**Nhóm thực hiện: [Tên nhóm của bạn]**
+**Giảng viên hướng dẫn: ThS. Võ Tấn Khoa**

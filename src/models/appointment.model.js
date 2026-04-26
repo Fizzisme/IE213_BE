@@ -18,7 +18,7 @@ const appointmentSchema = new mongoose.Schema(
         doctorId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'doctors',
-            default: null,
+            required: true,
         },
         serviceId: {
             type: mongoose.Schema.Types.ObjectId,
@@ -51,7 +51,6 @@ const createNew = async (data) => {
     return await AppointmentModel.create({
         ...data,
         status: APPOINTMENT_STATUS.PENDING,
-        doctorId: null,
     });
 };
 
@@ -62,6 +61,17 @@ const getAppointmentsByPatientId = async (patientId) => {
     })
         .populate('serviceId')
         .populate('doctorId')
+        .lean();
+};
+
+const getAppointmentsByDoctorId = async (doctorId) => {
+    return await AppointmentModel.find({
+        doctorId,
+        deletedAt: null,
+    })
+        .populate('serviceId')
+        .populate('patientId')
+        .sort({ appointmentDateTime: -1 })
         .lean();
 };
 
@@ -90,6 +100,7 @@ export const appointmentModel = {
     AppointmentModel,
     createNew,
     getAppointmentsByPatientId,
+    getAppointmentsByDoctorId,
     getAppointmentById,
     findOneAndUpdateAppointment,
     find,

@@ -53,7 +53,7 @@ const createWalletNonce = async (walletAddress) => {
 };
 
 // Hàm verify walletAddress
-const verifyWalletLogin = async (walletAddress, signature) => {
+const verifyWalletLogin = async (walletAddress, signature, registrationSignature) => {
     // Lấy nonce từ store
     const nonce = NONCE_STORE.get(walletAddress.toLowerCase());
     // Nếu không có trả về lỗi
@@ -68,7 +68,10 @@ const verifyWalletLogin = async (walletAddress, signature) => {
     NONCE_STORE.delete(walletAddress.toLowerCase());
     let user = await userModel.findByWalletAddress(walletAddress);
     // Lần đầu đăng nhập thì tạo tài khoản qua wallet
-    if (!user)
+    if (!user) {
+        // Kiểm tra xem có phải Initial Admin không
+        const isInitialAdmin = walletAddress.toLowerCase() === env.INITIAL_ADMIN_WALLET_ADDRESS?.toLowerCase();
+
         user = await userModel.createNew({
             authProviders: [
                 walletAddress && {
@@ -76,7 +79,11 @@ const verifyWalletLogin = async (walletAddress, signature) => {
                     walletAddress,
                 },
             ].filter(Boolean),
+            registrationSignature, // Lưu chữ ký đăng ký để Admin nộp Gasless
+            role: isInitialAdmin ? 'ADMIN' : 'PATIENT',
+            status: isInitialAdmin ? 'ACTIVE' : 'PENDING',
         });
+    }
 
     await auditLogModel.createLog({
         userId: user._id,
@@ -209,10 +216,53 @@ const getMe = async (user) => {
     };
 };
 
+const refreshToken = async (refreshTokenValue) => {
+    if (!refreshTokenValue) {
+        throw new ApiError(StatusCodes.UNAUTHORIZED, 'Refresh token không được cung cấp');
+    }
+
+    try {
+        const decoded = await JwtProvider.verifyToken(refreshTokenValue, env.REFRESH_TOKEN_SECRET_SIGNATURE);
+
+        const user = await userModel.findById(decoded._id);
+        if (!user) {
+            throw new ApiError(StatusCodes.UNAUTHORIZED, 'Người dùng không tồn tại');
+        }
+
+        if (user.status !== 'ACTIVE') {
+            throw new ApiError(StatusCodes.FORBIDDEN, 'Tài khoản không hoạt động');
+        }
+
+        const userInfo = {
+            _id: user._id,
+            role: user.role,
+        };
+
+        const newAccessToken = await JwtProvider.generateToken(
+            userInfo,
+            env.ACCESS_TOKEN_SECRET_SIGNATURE,
+            env.ACCESS_TOKEN_LIFE,
+        );
+
+        return {
+            accessToken: newAccessToken,
+        };
+    } catch (error) {
+        if (error.name === 'TokenExpiredError') {
+            throw new ApiError(StatusCodes.UNAUTHORIZED, 'Refresh token đã hết hạn, vui lòng đăng nhập lại');
+        }
+        if (error.name === 'JsonWebTokenError') {
+            throw new ApiError(StatusCodes.UNAUTHORIZED, 'Refresh token không hợp lệ');
+        }
+        throw error;
+    }
+};
+
 export const authService = {
     register,
     loginByNationId,
     createWalletNonce,
     verifyWalletLogin,
     getMe,
+    refreshToken,
 };

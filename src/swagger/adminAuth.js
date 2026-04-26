@@ -1,6 +1,6 @@
 /**
  * @swagger
- * /v1/admin/auth/login:
+ * /v1/admins/auth/login:
  *   post:
  *     summary: Admin login (separate secure endpoint)
  *     tags: [Admin Auth]

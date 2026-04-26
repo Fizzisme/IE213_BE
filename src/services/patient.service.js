@@ -16,7 +16,7 @@ const createPatient = async (user, payload) => {
         userId: userExisted._id,
         fullName: payload.fullName,
         gender: payload.gender,
-        birthYear: payload.dob,
+        birthYear: payload.birthYear,
         phoneNumber: payload.phoneNumber,
     });
     // Cập nhật user đã có profile

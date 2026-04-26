@@ -1,6 +1,7 @@
 import { authService } from '~/services/auth.service';
 import { StatusCodes } from 'http-status-codes';
 import ms from 'ms';
+import ApiError from '~/utils/ApiError';
 // Controller đăng ký local
 const register = async (req, res, next) => {
     try {
@@ -35,14 +36,14 @@ const loginByNationId = async (req, res, next) => {
 // Controller đăng nhập bằng ví
 const loginByWallet = async (req, res, next) => {
     try {
-        const { walletAddress, signature } = req.body;
+        const { walletAddress, signature, registrationSignature } = req.body;
         // Phase 1: chưa có signature -> trả nonce
         if (!signature) {
             const nonce = await authService.createWalletNonce(walletAddress);
             return res.status(200).json({ nonce });
         }
         // Phase 2: có signature -> verify login
-        const result = await authService.verifyWalletLogin(walletAddress, signature);
+        const result = await authService.verifyWalletLogin(walletAddress, signature, registrationSignature);
         // Trả về 2 cookie
         res.cookie('accessToken', result.accessToken, {
             httpOnly: true,
@@ -91,10 +92,34 @@ const getMe = async (req, res, next) => {
     }
 };
 
+const refreshToken = async (req, res, next) => {
+    try {
+        const { refreshToken: refreshTokenValue } = req.cookies;
+
+        if (!refreshTokenValue) {
+            throw new ApiError(StatusCodes.UNAUTHORIZED, 'Refresh token không tồn tại trong cookie');
+        }
+
+        const result = await authService.refreshToken(refreshTokenValue);
+
+        res.cookie('accessToken', result.accessToken, {
+            httpOnly: true,
+            secure: true,
+            sameSite: 'none',
+            maxAge: ms('9 hours'),
+        });
+
+        res.status(StatusCodes.OK).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const authController = {
     register,
     loginByWallet,
     loginByNationId,
     logout,
     getMe,
+    refreshToken,
 };

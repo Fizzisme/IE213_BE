@@ -7,10 +7,11 @@ import { testResultController } from '~/controllers/testResult.Controller';
 import { patientController } from '~/controllers/patient.controller';
 import { doctorController } from '~/controllers/doctor.controller';
 import { appointmentController } from '~/controllers/appointment.controller';
+import { chainCheck } from '~/middlewares/chainCheck';
 
 const Router = express.Router();
 
-// Tất cả route /doctor/* đều phải qua verifyToken + requireAdmin
+// Tất cả route /doctor/* đều phải qua verifyToken + requireDoctor
 Router.use(verifyToken, authorizeRoles('DOCTOR'));
 
 Router
@@ -44,5 +45,26 @@ Router
     .get('/appointments', appointmentController.getAppointments)
     // Api cập nht trạng thái appointment
     .patch('/appointments/:appointmentId/update-status', appointmentController.updateStatus);
+
+
+// Api lấy toàn bộ hồ sơ bệnh án của 1 bệnh nhân
+Router.get(
+    '/patients/:patientId/medical-records',
+    medicalRecordValidation.patientId,
+    medicalRecordController.getPatientMedicalRecords,
+);
+// Api kiểm tra tính toàn vẹn hồ sơ bệnh án với Blockchain
+Router.get(
+    '/medical-records/:medicalRecordId/verify',
+    medicalRecordValidation.medicalRecordId,
+    medicalRecordController.verifyIntegrity,
+);
+// Api xác minh giao dịch Blockchain sau khi ký MetaMask
+Router.post(
+    '/medical-records/:medicalRecordId/verify-tx',
+    chainCheck,
+    medicalRecordValidation.medicalRecordId,
+    medicalRecordController.verifyTx,
+);
 
 export const doctorRoute = Router;
