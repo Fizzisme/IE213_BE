@@ -43,9 +43,8 @@ Router
     .get('/me', doctorController.getMyProfile)
     // Api lấy lịch hẹn
     .get('/appointments', appointmentController.getAppointments)
-    // Api cập nht trạng thái appointment
+    // Api cập nhật trạng thái appointment
     .patch('/appointments/:appointmentId/update-status', appointmentController.updateStatus);
-
 
 // Api lấy toàn bộ hồ sơ bệnh án của 1 bệnh nhân
 Router.get(

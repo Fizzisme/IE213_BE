@@ -9,7 +9,11 @@ import { blockchainAbis, dynamicAccessControlContract } from '~/blockchains/cont
 import { validateContractTransaction } from '~/utils/blockchainVerification';
 
 const createAppointment = async (data, patientId) => {
-    const { appointmentDateTime, serviceId, doctorId, description } = data;
+    const { appointmentDateTime, serviceId, patientDescription } = data;
+    console.log(data);
+
+    // Hệ thống set cứng 1 bác sĩ
+    const doctorId = '69b8ec3de5bed9e6a3808110';
 
     // validate
     if (!appointmentDateTime || !serviceId || !doctorId) {
@@ -35,10 +39,13 @@ const createAppointment = async (data, patientId) => {
     }
 
     const doctorUser = await userModel.findById(doctorProfile.userId);
-    const doctorWallet = doctorUser.authProviders.find(p => p.type === 'WALLET')?.walletAddress;
-    
+    const doctorWallet = doctorUser.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
+
     if (!doctorWallet) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Bác sĩ này chưa liên kết ví Blockchain. Vui lòng chọn bác sĩ khác.');
+        throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            'Bác sĩ này chưa liên kết ví Blockchain. Vui lòng chọn bác sĩ khác.',
+        );
     }
 
     // create
@@ -86,7 +93,7 @@ const prepareGrantAccess = async (appointmentId) => {
     if (!doctorProfile) throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy thông tin bác sĩ');
 
     const doctorUser = await userModel.findById(doctorProfile.userId);
-    const doctorWallet = doctorUser.authProviders.find(p => p.type === 'WALLET')?.walletAddress;
+    const doctorWallet = doctorUser.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
 
     if (!doctorWallet) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Bác sĩ chưa liên kết ví Blockchain');
@@ -170,7 +177,7 @@ const prepareRevokeAccess = async (appointmentId) => {
 
     const doctorProfile = await doctorModel.DoctorModel.findById(appointment.doctorId);
     const doctorUser = await userModel.findById(doctorProfile.userId);
-    const doctorWallet = doctorUser.authProviders.find(p => p.type === 'WALLET')?.walletAddress;
+    const doctorWallet = doctorUser.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
 
     return {
         message: 'Thông tin sẵn sàng, vui lòng ký thu hồi quyền xem hồ sơ qua MetaMask',
@@ -254,7 +261,11 @@ const cancelMyAppointment = async (appointmentId, patientId) => {
     if (appointment.patientId.toString() !== patientId.toString()) {
         throw new ApiError(StatusCodes.FORBIDDEN, 'Bạn không có quyền hủy lịch này');
     }
-    if (![appointmentModel.APPOINTMENT_STATUS.PENDING, appointmentModel.APPOINTMENT_STATUS.CONFIRMED].includes(appointment.status)) {
+    if (
+        ![appointmentModel.APPOINTMENT_STATUS.PENDING, appointmentModel.APPOINTMENT_STATUS.CONFIRMED].includes(
+            appointment.status,
+        )
+    ) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Chỉ có thể hủy lịch đang chờ hoặc đã xác nhận');
     }
 
@@ -266,7 +277,7 @@ const cancelMyAppointment = async (appointmentId, patientId) => {
     if (appointment.doctorId) {
         const doctorProfile = await doctorModel.DoctorModel.findById(appointment.doctorId);
         const doctorUser = await userModel.findById(doctorProfile.userId);
-        const doctorWallet = doctorUser.authProviders.find(p => p.type === 'WALLET')?.walletAddress;
+        const doctorWallet = doctorUser.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
 
         if (doctorWallet) {
             blockchainMetadata = {

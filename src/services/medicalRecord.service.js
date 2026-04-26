@@ -12,6 +12,7 @@ import { validateContractTransaction } from '~/utils/blockchainVerification';
 
 // Service tạo hồ sơ bệnh án
 const createNew = async (patientId, data, currentUser) => {
+    console.log(data);
     // Kiểm tra xem có bệnh nhân trong hệ thống không
     const patient = await patientModel.findById(patientId);
     if (!patient) throw new ApiError(StatusCodes.NOT_FOUND, 'Bệnh nhân không tồn tại');
@@ -80,11 +81,14 @@ const diagnosis = async (medicalRecordId, data, currentUser) => {
     // Kiểm tra xem đã có hồ sơ bệnh án để chuẩn đoán
     const medicalRecord = await medicalRecordModel.findOneById(medicalRecordId);
     if (!medicalRecord) throw new ApiError(StatusCodes.NOT_FOUND, 'Không có hồ sơ bệnh án');
-    
+
     // Đảm bảo trạng thái đồng bộ 100% với Smart Contract (Chỉ HAS_RESULT mới được chẩn đoán)
     // Ngăn chặn việc bác sĩ "nhảy cóc" hoặc chẩn đoán lại hồ sơ đã xong
     if (medicalRecord.status !== 'HAS_RESULT') {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Hồ sơ chưa có kết quả xét nghiệm hoặc đã hoàn thành, không thể thực hiện chẩn đoán!');
+        throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            'Hồ sơ chưa có kết quả xét nghiệm hoặc đã hoàn thành, không thể thực hiện chẩn đoán!',
+        );
     }
 
     // Kiểm tra xem có Kết quả xét nghiệm chưa
@@ -175,7 +179,8 @@ const verifyIntegrity = async (medicalRecordId) => {
                 resultHash,
                 1, // hashType = 1 (testResultHash gộp recordHash)
             );
-            if (!isValid) return { medicalRecordId, isValid: false, failedAt: 'HAS_RESULT', status: medicalRecord.status };
+            if (!isValid)
+                return { medicalRecordId, isValid: false, failedAt: 'HAS_RESULT', status: medicalRecord.status };
         }
     }
 
@@ -186,7 +191,9 @@ const verifyIntegrity = async (medicalRecordId) => {
             // Lấy lại testResultId đã dùng để băm lúc chẩn đoán
             let testResultIdToHash = medicalRecord.testResultId?.toString();
             if (!testResultIdToHash) {
-                const tr = await testResultModel.TestResultModel.findOne({ medicalRecordId: medicalRecordId }).sort({ createdAt: -1 });
+                const tr = await testResultModel.TestResultModel.findOne({ medicalRecordId: medicalRecordId }).sort({
+                    createdAt: -1,
+                });
                 testResultIdToHash = tr?._id.toString();
             }
 
@@ -201,7 +208,8 @@ const verifyIntegrity = async (medicalRecordId) => {
                 diagnosisHash,
                 2, // hashType = 2 (diagnosisHash gộp testResultHash)
             );
-            if (!isValid) return { medicalRecordId, isValid: false, failedAt: 'DIAGNOSED', status: medicalRecord.status };
+            if (!isValid)
+                return { medicalRecordId, isValid: false, failedAt: 'DIAGNOSED', status: medicalRecord.status };
         }
     }
 
@@ -282,7 +290,7 @@ const verifyTx = async (medicalRecordId, txHash, currentUser) => {
         // Tùy theo trạng thái hiện tại của Hồ sơ mà lưu txHash vào trường tương ứng
         let updateData = {
             'blockchainMetadata.isSynced': true,
-            'blockchainMetadata.syncAt': new Date()
+            'blockchainMetadata.syncAt': new Date(),
         };
 
         if (medicalRecord.status === 'CREATED') {
@@ -305,7 +313,11 @@ const verifyTx = async (medicalRecordId, txHash, currentUser) => {
             action: 'VERIFY_BLOCKCHAIN_SYNC',
             entityType: 'MEDICAL_RECORD',
             entityId: medicalRecordId,
-            details: { txHash, step: medicalRecord.status, note: `Blockchain sync verified for step: ${medicalRecord.status}` },
+            details: {
+                txHash,
+                step: medicalRecord.status,
+                note: `Blockchain sync verified for step: ${medicalRecord.status}`,
+            },
         });
 
         return 'Đồng bộ Blockchain thành công';
@@ -371,7 +383,10 @@ const getPatientMedicalRecords = async (patientId, currentUser) => {
         if (doctorWallet && patientWallet) {
             const hasAccess = await dynamicAccessControlContract.canAccess(patientWallet, doctorWallet);
             if (!hasAccess) {
-                throw new ApiError(StatusCodes.FORBIDDEN, 'Bạn không có quyền truy cập hồ sơ của bệnh nhân này trên Blockchain');
+                throw new ApiError(
+                    StatusCodes.FORBIDDEN,
+                    'Bạn không có quyền truy cập hồ sơ của bệnh nhân này trên Blockchain',
+                );
             }
         }
     }
@@ -407,15 +422,18 @@ const getDetail = async (medicalRecordId, currentUser) => {
     // Nếu ngườ i xem là Bác sĩ, phải kiểm tra quyền xem On-chain (DynamicAccessControl)
     if (currentUser.role === 'DOCTOR') {
         const doctorUser = await userModel.findById(currentUser._id);
-        const doctorWallet = doctorUser.authProviders.find(p => p.type === 'WALLET')?.walletAddress;
+        const doctorWallet = doctorUser.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
 
         const patientUser = await userModel.findById(medicalRecord.patientId.userId);
-        const patientWallet = patientUser.authProviders.find(p => p.type === 'WALLET')?.walletAddress;
+        const patientWallet = patientUser.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
 
         if (doctorWallet && patientWallet) {
             const hasAccess = await dynamicAccessControlContract.canAccess(patientWallet, doctorWallet);
             if (!hasAccess) {
-                throw new ApiError(StatusCodes.FORBIDDEN, 'Bạn không có quyền truy cập hồ sơ này trên Blockchain (Truy cập đã hết hạn hoặc chưa được cấp)');
+                throw new ApiError(
+                    StatusCodes.FORBIDDEN,
+                    'Bạn không có quyền truy cập hồ sơ này trên Blockchain (Truy cập đã hết hạn hoặc chưa được cấp)',
+                );
             }
         }
     }

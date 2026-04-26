@@ -25,5 +25,7 @@ Router.post('/users/:id/verify-onboarding', chainCheck, adminController.verifyOn
 Router.patch('/users/:id/re-review', adminController.reReviewUser);
 // Api soft delete user
 Router.delete('/users/:id/soft-delete', adminController.softDeleteUser);
+// Api lấy thông tin cá nhân admin
+Router.get('/me', adminController.getMyProfile);
 
 export const adminRoute = Router;

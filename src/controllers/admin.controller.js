@@ -88,6 +88,15 @@ const verifyOnboarding = async (req, res, next) => {
     }
 };
 
+const getMyProfile = async (req, res, next) => {
+    try {
+        const result = await adminService.getMyProfile(req.user);
+        return res.status(StatusCodes.OK).json(result);
+    } catch (err) {
+        next(err);
+    }
+};
+
 export const adminController = {
     getUsers,
     getUserDetail,
@@ -96,4 +105,5 @@ export const adminController = {
     reReviewUser,
     softDeleteUser,
     verifyOnboarding,
+    getMyProfile,
 };

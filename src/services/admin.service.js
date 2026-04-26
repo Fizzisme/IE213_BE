@@ -7,6 +7,7 @@ import ApiError from '~/utils/ApiError';
 import { blockchainProvider } from '~/blockchains/provider';
 import { blockchainAbis, identityManagerContract } from '~/blockchains/contract';
 import { validateContractTransaction } from '~/utils/blockchainVerification';
+import { adminModel } from '~/models/admin.model';
 
 const BLOCKCHAIN_ROLE_ENUM = {
     PATIENT: '1',
@@ -74,14 +75,18 @@ const approveUser = async ({ targetUserId, adminId }) => {
     }
 
     // Lấy wallet address từ authProviders
-    const walletProvider = user.authProviders.find(p => p.type === 'WALLET');
-    const blockchain = needsBlockchain && walletProvider?.walletAddress ? {
-        contractAddress: identityManagerContract.target,
-        method: user.role === userModel.USER_ROLES.PATIENT ? 'registerPatientGasless' : 'registerStaff',
-        args: user.role === userModel.USER_ROLES.PATIENT
-            ? [walletProvider.walletAddress, user.registrationSignature]
-            : [walletProvider.walletAddress, BLOCKCHAIN_ROLE_ENUM[user.role]],
-    } : null;
+    const walletProvider = user.authProviders.find((p) => p.type === 'WALLET');
+    const blockchain =
+        needsBlockchain && walletProvider?.walletAddress
+            ? {
+                  contractAddress: identityManagerContract.target,
+                  method: user.role === userModel.USER_ROLES.PATIENT ? 'registerPatientGasless' : 'registerStaff',
+                  args:
+                      user.role === userModel.USER_ROLES.PATIENT
+                          ? [walletProvider.walletAddress, user.registrationSignature]
+                          : [walletProvider.walletAddress, BLOCKCHAIN_ROLE_ENUM[user.role]],
+              }
+            : null;
 
     return {
         message,
@@ -228,8 +233,8 @@ const verifyOnboarding = async ({ targetUserId, txHash, adminId }) => {
             approvedBy: adminId,
             blockchainMetadata: {
                 isSynced: true,
-                txHash: txHash
-            }
+                txHash: txHash,
+            },
         });
 
         // Ghi audit log
@@ -256,6 +261,12 @@ const verifyOnboarding = async ({ targetUserId, txHash, adminId }) => {
     }
 };
 
+const getMyProfile = async (user) => {
+    const admin = adminModel.getAdminByUserId(user._id);
+    if (!admin) throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy admin');
+    return admin;
+};
+
 export const adminService = {
     getUsers,
     getUserDetail,
@@ -264,4 +275,5 @@ export const adminService = {
     reReviewUser,
     softDeleteUser,
     verifyOnboarding,
+    getMyProfile,
 };
