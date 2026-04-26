@@ -6,6 +6,7 @@ import { medicalRecordValidation } from '~/validations/medicalRecord.validation'
 import { testResultController } from '~/controllers/testResult.Controller';
 import { patientController } from '~/controllers/patient.controller';
 import { doctorController } from '~/controllers/doctor.controller';
+import { appointmentController } from '~/controllers/appointment.controller';
 import { chainCheck } from '~/middlewares/chainCheck';
 
 const Router = express.Router();
@@ -36,6 +37,7 @@ Router.post(
     medicalRecordValidation.createNew,
     medicalRecordController.createNew
 );
+
 // Api chẩn đoán cuối cùng hồ sơ bệnh án
 Router.patch(
     '/medical-records/:medicalRecordId/diagnosis',

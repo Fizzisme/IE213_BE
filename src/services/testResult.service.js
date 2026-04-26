@@ -108,7 +108,7 @@ const verifyTx = async (testResultId, txHash) => {
     const receipt = await blockchainProvider.waitForTransaction(txHash);
 
     if (receipt.status === 1) {
-        // Cập nhật trạng thái đồng bộ
+        // 1. Cập nhật trạng thái đồng bộ trong bảng TestResult
         await testResultModel.TestResultModel.updateOne(
             { _id: testResultId },
             {
@@ -121,6 +121,12 @@ const verifyTx = async (testResultId, txHash) => {
                 },
             },
         );
+
+        // 2. TẬP TRUNG HÓA DỮ LIỆU: Cập nhật labTxHash vào bảng MedicalRecord tương ứng
+        // Điều này giúp việc Audit Trail của 1 bệnh án được quy về một mối
+        await medicalRecordModel.update(testResult.medicalRecordId, {
+            'blockchainMetadata.labTxHash': txHash,
+        });
 
         return 'Đồng bộ Blockchain thành công';
     } else {

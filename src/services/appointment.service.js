@@ -10,8 +10,8 @@ const createAppointment = async (data, patientId) => {
     const { appointmentDateTime, serviceId, doctorId, description } = data;
 
     // validate
-    if (!appointmentDateTime || !serviceId) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu dữ liệu (ngày giờ hoặc dịch vụ)');
+    if (!appointmentDateTime || !serviceId || !doctorId) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu dữ liệu (ngày giờ, dịch vụ hoặc bác sĩ)');
     }
 
     const appointmentDate = new Date(appointmentDateTime);
@@ -25,33 +25,36 @@ const createAppointment = async (data, patientId) => {
         throw new ApiError(StatusCodes.NOT_FOUND, 'Dịch vụ không tồn tại');
     }
 
+    // --- BLOCKCHAIN UX OPTIMIZATION ---
+    // Kiểm tra ví bác sĩ trước khi tạo lịch để đảm bảo luồng cấp quyền hoạt động
+    const doctorProfile = await doctorModel.DoctorModel.findById(doctorId);
+    if (!doctorProfile) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Bác sĩ không tồn tại');
+    }
+
+    const doctorUser = await userModel.findById(doctorProfile.userId);
+    const doctorWallet = doctorUser.authProviders.find(p => p.type === 'WALLET')?.walletAddress;
+    
+    if (!doctorWallet) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Bác sĩ này chưa liên kết ví Blockchain. Vui lòng chọn bác sĩ khác.');
+    }
+
     // create
     const newAppointment = await appointmentModel.createNew({
         patientId: patientId,
         serviceId,
-        doctorId: doctorId || null,
+        doctorId: doctorId,
         appointmentDateTime: appointmentDate,
         description,
         price: service.price,
     });
 
-    // --- BLOCKCHAIN UX OPTIMIZATION ---
-    let blockchainMetadata = null;
-    if (doctorId) {
-        const doctorProfile = await doctorModel.DoctorModel.findById(doctorId);
-        if (doctorProfile) {
-            const doctorUser = await userModel.findById(doctorProfile.userId);
-            const doctorWallet = doctorUser.authProviders.find(p => p.type === 'WALLET')?.walletAddress;
-            if (doctorWallet) {
-                blockchainMetadata = {
-                    action: 'GRANT_ACCESS',
-                    doctorWallet,
-                    durationHours: 24,
-                    message: 'Vui lòng ký xác nhận cấp quyền xem hồ sơ cho Bác sĩ qua MetaMask',
-                };
-            }
-        }
-    }
+    const blockchainMetadata = {
+        action: 'GRANT_ACCESS',
+        doctorWallet,
+        durationHours: 24,
+        message: 'Vui lòng ký xác nhận cấp quyền xem hồ sơ cho Bác sĩ qua MetaMask',
+    };
 
     return {
         appointment: newAppointment,
@@ -126,6 +129,19 @@ const prepareRevokeAccess = async (appointmentId) => {
 
 const getAppointmentsByPatient = async (patientId) => {
     return await appointmentModel.getAppointmentsByPatientId(patientId);
+};
+
+/**
+ * Bước 4: Xác minh giao dịch revokeAccess thành công trên Blockchain.
+ */
+const verifyRevokeAccess = async (appointmentId, txHash) => {
+    const receipt = await blockchainProvider.waitForTransaction(txHash);
+
+    if (receipt.status === 1) {
+        return 'Thu hồi quyền xem hồ sơ trên Blockchain thành công';
+    } else {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch thu hồi quyền thất bại');
+    }
 };
 
 const cancelMyAppointment = async (appointmentId, patientId) => {

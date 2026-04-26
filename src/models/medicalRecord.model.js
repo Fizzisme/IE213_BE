@@ -57,9 +57,10 @@ const medicalRecordSchema = new mongoose.Schema(
         },
 
         blockchainMetadata: {
+            createTxHash: { type: String },
+            labTxHash: { type: String },
+            diagnosisTxHash: { type: String },
             isSynced: { type: Boolean, default: false },
-            txHash: { type: String },
-            onChainHash: { type: String },
             syncAt: { type: Date }
         },
 

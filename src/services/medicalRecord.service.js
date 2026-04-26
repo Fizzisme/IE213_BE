@@ -73,8 +73,12 @@ const diagnosis = async (medicalRecordId, data, currentUser) => {
     // Kiểm tra xem đã có hồ sơ bệnh án để chuẩn đoán
     const medicalRecord = await medicalRecordModel.findOneById(medicalRecordId);
     if (!medicalRecord) throw new ApiError(StatusCodes.NOT_FOUND, 'Không có hồ sơ bệnh án');
-    if (medicalRecord.status === 'COMPLETE' || medicalRecord.status === 'DIAGNOSED')
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Hồ sơ đã được hoàn thành');
+    
+    // Đảm bảo trạng thái đồng bộ 100% với Smart Contract (Chỉ HAS_RESULT mới được chẩn đoán)
+    // Ngăn chặn việc bác sĩ "nhảy cóc" hoặc chẩn đoán lại hồ sơ đã xong
+    if (medicalRecord.status !== 'HAS_RESULT') {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Hồ sơ chưa có kết quả xét nghiệm hoặc đã hoàn thành, không thể thực hiện chẩn đoán!');
+    }
 
     // Kiểm tra xem có Kết quả xét nghiệm chưa
     const testResult = await testResultModel.findOneById(data.testResultId);
@@ -114,29 +118,86 @@ const diagnosis = async (medicalRecordId, data, currentUser) => {
     };
 };
 
-// Hàm kiểm tra tính toàn vẹn dữ liệu giữa MongoDB và Blockchain
+// Hàm kiểm tra tính toàn vẹn dữ liệu xuyên suốt 3 tầng Hash-Chaining
 const verifyIntegrity = async (medicalRecordId) => {
     const medicalRecord = await medicalRecordModel.findOneById(medicalRecordId);
     if (!medicalRecord) throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy hồ sơ');
 
+    // --- TẦNG 1: Kiểm tra Thông tin ban đầu (recordHash) ---
     const recordHash = generateDataHash({
         type: medicalRecord.type,
         note: medicalRecord.note,
         patientId: medicalRecord.patientId.toString(),
     });
 
-    // Gọi hàm verifyIntegrity trên Smart Contract (hashType = 0 cho recordHash)
-    const isValid = await medicalLedgerContract.verifyIntegrity(
+    let isValid = await medicalLedgerContract.verifyIntegrity(
         medicalRecordId.toString(),
         recordHash,
-        0,
+        0, // hashType = 0
     );
+
+    if (!isValid) return { medicalRecordId, isValid: false, failedAt: 'CREATED', status: medicalRecord.status };
+
+    // --- TẦNG 2: Kiểm tra Kết quả xét nghiệm (resultHash) ---
+    // Nếu hồ sơ đã qua bước xét nghiệm, bắt buộc phải kiểm tra tính toàn vẹn của Lab Result
+    if (['HAS_RESULT', 'DIAGNOSED', 'COMPLETE'].includes(medicalRecord.status)) {
+        // Tìm kết quả xét nghiệm tương ứng
+        let testResultData = null;
+        if (medicalRecord.testResultId) {
+            testResultData = await testResultModel.findOneById(medicalRecord.testResultId);
+        } else if (testResultModel.TestResultModel) {
+            testResultData = await testResultModel.TestResultModel.findOne({
+                medicalRecordId: medicalRecordId,
+            }).sort({ createdAt: -1 });
+        }
+
+        if (testResultData) {
+            const resultHash = generateDataHash({
+                testType: testResultData.testType,
+                rawData: testResultData.rawData,
+                aiAnalysis: testResultData.aiAnalysis,
+            });
+
+            isValid = await medicalLedgerContract.verifyIntegrity(
+                medicalRecordId.toString(),
+                resultHash,
+                1, // hashType = 1 (testResultHash gộp recordHash)
+            );
+            if (!isValid) return { medicalRecordId, isValid: false, failedAt: 'HAS_RESULT', status: medicalRecord.status };
+        }
+    }
+
+    // --- TẦNG 3: Kiểm tra Chẩn đoán cuối cùng (diagnosisHash) ---
+    // Nếu hồ sơ đã hoàn thành chẩn đoán
+    if (['DIAGNOSED', 'COMPLETE'].includes(medicalRecord.status)) {
+        if (medicalRecord.diagnosis) {
+            // Lấy lại testResultId đã dùng để băm lúc chẩn đoán
+            let testResultIdToHash = medicalRecord.testResultId?.toString();
+            if (!testResultIdToHash) {
+                const tr = await testResultModel.TestResultModel.findOne({ medicalRecordId: medicalRecordId }).sort({ createdAt: -1 });
+                testResultIdToHash = tr?._id.toString();
+            }
+
+            const diagnosisHash = generateDataHash({
+                diagnosis: medicalRecord.diagnosis,
+                note: medicalRecord.note, // Note lúc này là note chẩn đoán
+                testResultId: testResultIdToHash,
+            });
+
+            isValid = await medicalLedgerContract.verifyIntegrity(
+                medicalRecordId.toString(),
+                diagnosisHash,
+                2, // hashType = 2 (diagnosisHash gộp testResultHash)
+            );
+            if (!isValid) return { medicalRecordId, isValid: false, failedAt: 'DIAGNOSED', status: medicalRecord.status };
+        }
+    }
 
     return {
         medicalRecordId,
-        isValid,
-        mongodbHash: recordHash,
+        isValid: true,
         status: medicalRecord.status,
+        message: 'Dữ liệu y tế khớp hoàn toàn với Blockchain (Source of Truth)',
     };
 };
 
@@ -149,14 +210,24 @@ const verifyTx = async (medicalRecordId, txHash) => {
     const receipt = await blockchainProvider.waitForTransaction(txHash);
 
     if (receipt.status === 1) {
-        // Cập nhật trạng thái đồng bộ
-        await medicalRecordModel.update(medicalRecordId, {
-            blockchainMetadata: {
-                isSynced: true,
-                txHash: txHash,
-                syncAt: new Date(),
-            },
-        });
+        // Tùy theo trạng thái hiện tại của Hồ sơ mà lưu txHash vào trường tương ứng
+        let updateData = {
+            'blockchainMetadata.isSynced': true,
+            'blockchainMetadata.syncAt': new Date()
+        };
+
+        if (medicalRecord.status === 'CREATED') {
+            updateData['blockchainMetadata.createTxHash'] = txHash;
+        } else if (medicalRecord.status === 'HAS_RESULT') {
+            updateData['blockchainMetadata.labTxHash'] = txHash;
+        } else if (medicalRecord.status === 'DIAGNOSED') {
+            updateData['blockchainMetadata.diagnosisTxHash'] = txHash;
+            // ĐỒNG BỘ TRẠNG THÁI: Blockchain chuyển sang COMPLETE thì Database cũng vậy
+            updateData['status'] = 'COMPLETE';
+        }
+
+        // Cập nhật Database
+        await medicalRecordModel.update(medicalRecordId, updateData);
 
         // Tạo audit log
         await auditLogModel.createLog({
@@ -164,7 +235,7 @@ const verifyTx = async (medicalRecordId, txHash) => {
             action: 'VERIFY_BLOCKCHAIN_SYNC',
             entityType: 'MEDICAL_RECORD',
             entityId: medicalRecordId,
-            details: { txHash, note: 'Blockchain sync verified successfully' },
+            details: { txHash, step: medicalRecord.status, note: `Blockchain sync verified for step: ${medicalRecord.status}` },
         });
 
         return 'Đồng bộ Blockchain thành công';
