@@ -17,11 +17,10 @@ const BLOCKCHAIN_ROLE_ENUM = {
 };
 
 // lấy ra toàn bộ user tồn tại
-const getUsers = async ({ status, page, limit, deleted }) => {
-    if (deleted) {
-        return await userModel.findDeleted({ page, limit });
-    }
-    return await userModel.findByStatus({ status, page, limit });
+const getUsers = async ({ status, search, page, limit }) => {
+    const users = await userModel.getAll({ status, search, page, limit });
+    console.log(users);
+    return users;
 };
 
 // Xem chi tiết 1 user

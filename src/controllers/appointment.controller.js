@@ -32,16 +32,20 @@ const createAppointment = async (req, res) => {
     }
 };
 
-const getMyAppointments = async (req, res) => {
+const getMyAppointments = async (req, res, next) => {
     try {
         const userId = req.user._id;
+
         const patient = await patientModel.findByUserId(userId);
+
+        if (!patient) {
+            return res.status(200).json([]);
+        }
+
         const result = await appointmentService.getAppointmentsByPatient(patient._id);
         return res.status(200).json(result);
     } catch (error) {
-        return res.status(500).json({
-            message: 'Lỗi server',
-        });
+        next(error);
     }
 };
 
@@ -125,8 +129,8 @@ const updateStatus = async (req, res, next) => {
     } catch (e) {
         next(e);
     }
-}
-      
+};
+
 const getDoctorAppointments = async (req, res, next) => {
     try {
         const result = await appointmentService.getAppointmentsByDoctor(req.user._id);

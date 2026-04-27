@@ -183,6 +183,26 @@ const softDelete = async (userId) => {
     );
 };
 
+const getAll = async ({ status, search, page = 1, limit = 20 } = {}) => {
+    const filter = {};
+
+    if (status) filter.status = status.toUpperCase();
+
+    if (search) {
+        filter.$or = [
+            { fullName: { $regex: search, $options: 'i' } },
+            { 'authProviders.walletAddress': { $regex: search, $options: 'i' } },
+        ];
+    }
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    return await UserModel.find(filter)
+        .skip(skip)
+        .limit(Number(limit))
+        .sort({ createdAt: -1 });
+};
+
 export const userModel = {
     USER_ROLES,
     USER_STATUS,
@@ -197,4 +217,5 @@ export const userModel = {
     findDetailById,
     findDeleted,
     softDelete,
+    getAll,
 };

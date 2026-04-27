@@ -82,14 +82,14 @@ const createAppointment = async (data, patientId) => {
 const prepareGrantAccess = async (appointmentId) => {
     const appointment = await appointmentModel.getAppointmentById(appointmentId);
     if (!appointment) throw new ApiError(StatusCodes.NOT_FOUND, 'Lịch hẹn không tồn tại');
-
+    console.log(appointment);
     // Kiểm tra doctorId đã được phân công chưa
     if (!appointment.doctorId) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Lịch hẹn chưa được phân công bác sĩ');
     }
 
     // Lấy thông tin Doctor User để lấy Wallet
-    const doctorProfile = await doctorModel.DoctorModel.findById(appointment.doctorId);
+    const doctorProfile = await doctorModel.findOneByUserId(appointment.doctorId);
     if (!doctorProfile) throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy thông tin bác sĩ');
 
     const doctorUser = await userModel.findById(doctorProfile.userId);

@@ -12,7 +12,7 @@ const Router = express.Router();
 Router.use(verifyToken, authorizeRoles('ADMIN'));
 
 // Api lấy độ toàn bộ users
-Router.get('/users', adminValidation.listUsers, adminController.getUsers);
+Router.get('/users', adminController.getUsers);
 // Api lấy chi tiết 1 user
 Router.get('/users/:id', adminController.getUserDetail);
 // Api approve 1 user

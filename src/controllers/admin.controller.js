@@ -5,7 +5,9 @@ import { StatusCodes } from 'http-status-codes';
 // GET /admin/users?status=PENDING&page=1&limit=10
 const getUsers = async (req, res, next) => {
     try {
-        const result = await adminService.getUsers(req.query);
+        const { status, search, page = 1, limit = 20 } = req.query;
+        const result = await adminService.getUsers({ status, search, page, limit });
+        console.log(result);
         res.status(StatusCodes.OK).json(result);
     } catch (err) {
         next(err);
