@@ -7,6 +7,8 @@ import { appointmentController } from '~/controllers/appointment.controller';
 import { serviceController } from '~/controllers/service.controller';
 import { notificationController } from '~/controllers/notification.controller';
 import { chainCheck } from '~/middlewares/chainCheck';
+import { medicalRecordController } from '~/controllers/medicalRecord.controller';
+import { medicalRecordValidation } from '~/validations/medicalRecord.validation';
 
 const Router = express.Router();
 
@@ -20,6 +22,13 @@ Router.get('/appointments/me', appointmentController.getMyAppointments);
 Router.get('/services', serviceController.getAllServices);
 Router.patch('/appointments/:id/cancel', appointmentController.cancelMyAppointment);
 Router.patch('/appointments/:id/reschedule', appointmentController.rescheduleMyAppointment);
+Router.get('/medical-records', medicalRecordController.getMyMedicalRecords);
+Router.get(
+    '/medical-records/:medicalRecordId',
+    medicalRecordValidation.medicalRecordId,
+    medicalRecordController.getMyMedicalRecordDetail,
+);
+
 // Api cấp quyền cho bác sĩ trên Blockchain
 Router.get('/appointments/:id/prepare-grant-access', appointmentController.prepareGrantAccess);
 Router.get('/appointments/:id/prepare-revoke-access', appointmentController.prepareRevokeAccess);

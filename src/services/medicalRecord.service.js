@@ -477,6 +477,27 @@ const getDetail = async (medicalRecordId, currentUser) => {
     return medicalRecord;
 };
 
+const getMyMedicalRecords = async (currentUser, statusArray = []) => {
+    const patient = await patientModel.findByUserId(currentUser._id);
+    if (!patient) throw new ApiError(StatusCodes.NOT_FOUND, 'Chưa có hồ sơ bệnh nhân');
+
+    return await getPatientMedicalRecords(patient._id.toString(), currentUser, statusArray);
+};
+
+const getMyMedicalRecordDetail = async (medicalRecordId, currentUser) => {
+    const patient = await patientModel.findByUserId(currentUser._id);
+    if (!patient) throw new ApiError(StatusCodes.NOT_FOUND, 'Chưa có hồ sơ bệnh nhân');
+
+    const medicalRecord = await getDetail(medicalRecordId, currentUser);
+    const recordPatientId = medicalRecord?.patientInfo?._id?.toString();
+
+    if (recordPatientId !== patient._id.toString()) {
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Bạn không có quyền xem hồ sơ bệnh án này');
+    }
+
+    return medicalRecord;
+};
+
 export const medicalRecordService = {
     createNew,
     diagnosis,
@@ -485,4 +506,6 @@ export const medicalRecordService = {
     getDetail,
     verifyIntegrity,
     verifyTx,
+    getMyMedicalRecords,
+    getMyMedicalRecordDetail,
 };

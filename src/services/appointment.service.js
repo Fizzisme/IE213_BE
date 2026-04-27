@@ -3,10 +3,16 @@ import { serviceModel } from '~/models/service.model';
 import { StatusCodes } from 'http-status-codes';
 import ApiError from '~/utils/ApiError';
 import { doctorModel } from '~/models/doctor.model';
+import { patientModel } from '~/models/patient.model';
 import { userModel } from '~/models/user.model';
 import { blockchainProvider } from '~/blockchains/provider';
-import { blockchainAbis, dynamicAccessControlContract } from '~/blockchains/contract';
+import { blockchainAbis, dynamicAccessControlContract, identityManagerContract } from '~/blockchains/contract';
 import { validateContractTransaction } from '~/utils/blockchainVerification';
+
+const BLOCKCHAIN_ROLE = {
+    PATIENT: 1,
+    DOCTOR: 2,
+};
 
 const createAppointment = async (data, patientId) => {
     const { appointmentDateTime, serviceId, patientDescription } = data;
@@ -82,7 +88,18 @@ const createAppointment = async (data, patientId) => {
 const prepareGrantAccess = async (appointmentId) => {
     const appointment = await appointmentModel.getAppointmentById(appointmentId);
     if (!appointment) throw new ApiError(StatusCodes.NOT_FOUND, 'Lịch hẹn không tồn tại');
-    console.log(appointment);
+
+    const patientProfile = await patientModel.findById(appointment.patientId);
+    if (!patientProfile) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy thông tin bệnh nhân');
+    }
+
+    const patientUser = await userModel.findById(patientProfile.userId);
+    const patientWallet = patientUser?.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
+    if (!patientWallet) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Bệnh nhân chưa liên kết ví Blockchain');
+    }
+
     // Kiểm tra doctorId đã được phân công chưa
     if (!appointment.doctorId) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Lịch hẹn chưa được phân công bác sĩ');
@@ -97,6 +114,25 @@ const prepareGrantAccess = async (appointmentId) => {
 
     if (!doctorWallet) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Bác sĩ chưa liên kết ví Blockchain');
+    }
+
+    const [isPatientActiveOnChain, isDoctorActiveOnChain] = await Promise.all([
+        identityManagerContract.hasRole(patientWallet, BLOCKCHAIN_ROLE.PATIENT),
+        identityManagerContract.hasRole(doctorWallet, BLOCKCHAIN_ROLE.DOCTOR),
+    ]);
+
+    if (!isPatientActiveOnChain) {
+        throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            'Bệnh nhân chưa được đăng ký vai trò PATIENT trên Blockchain, chưa thể cấp quyền',
+        );
+    }
+
+    if (!isDoctorActiveOnChain) {
+        throw new ApiError(
+            StatusCodes.BAD_REQUEST,
+            'Bác sĩ chưa được kích hoạt vai trò DOCTOR trên Blockchain, chưa thể nhận quyền truy cập',
+        );
     }
 
     return {
@@ -121,7 +157,7 @@ const verifyGrantAccess = async (appointmentId, txHash, currentUser) => {
     }
 
     // 2. Suy ra ví bác sĩ đích từ appointment để đối chiếu với calldata của tx.
-    const doctorProfile = await doctorModel.DoctorModel.findById(appointment.doctorId);
+    const doctorProfile = await doctorModel.findOneByUserId(appointment.doctorId);
     if (!doctorProfile) {
         throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy thông tin bác sĩ');
     }
@@ -175,7 +211,7 @@ const prepareRevokeAccess = async (appointmentId) => {
     const appointment = await appointmentModel.getAppointmentById(appointmentId);
     if (!appointment) throw new ApiError(StatusCodes.NOT_FOUND, 'Lịch hẹn không tồn tại');
 
-    const doctorProfile = await doctorModel.DoctorModel.findById(appointment.doctorId);
+    const doctorProfile = await doctorModel.findOneByUserId(appointment.doctorId);
     const doctorUser = await userModel.findById(doctorProfile.userId);
     const doctorWallet = doctorUser.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
 
@@ -218,7 +254,7 @@ const verifyRevokeAccess = async (appointmentId, txHash, currentUser) => {
         throw new ApiError(StatusCodes.NOT_FOUND, 'Lịch hẹn không tồn tại');
     }
 
-    const doctorProfile = await doctorModel.DoctorModel.findById(appointment.doctorId);
+    const doctorProfile = await doctorModel.findOneByUserId(appointment.doctorId);
     const doctorUser = await userModel.findById(doctorProfile.userId);
     const doctorWallet = doctorUser?.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
     const patientUser = await userModel.findById(currentUser._id);

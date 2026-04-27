@@ -56,6 +56,27 @@ const getPatientMedicalRecords = async (req, res, next) => {
     }
 };
 
+const getMyMedicalRecords = async (req, res, next) => {
+    try {
+        const { status } = req.query;
+        const statusArray = status ? status.split(',') : [];
+
+        const result = await medicalRecordService.getMyMedicalRecords(req.user, statusArray);
+        res.status(StatusCodes.OK).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getMyMedicalRecordDetail = async (req, res, next) => {
+    try {
+        const result = await medicalRecordService.getMyMedicalRecordDetail(req.params.medicalRecordId, req.user);
+        res.status(StatusCodes.OK).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
 const verifyIntegrity = async (req, res, next) => {
     try {
         const result = await medicalRecordService.verifyIntegrity(req.params.medicalRecordId);
@@ -84,4 +105,6 @@ export const medicalRecordController = {
     getPatientMedicalRecords,
     verifyIntegrity,
     verifyTx,
+    getMyMedicalRecords,
+    getMyMedicalRecordDetail,
 };
