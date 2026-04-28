@@ -1,71 +1,399 @@
-# ĐỒ ÁN MÔN HỌC IE213 - HỆ THỐNG QUẢN LÝ HỒ SƠ Y TẾ WEB3 (EHR)
+# IE213 Backend - EHR Web3 API
 
-Dự án này là hệ thống quản lý bệnh án điện tử tích hợp công nghệ Blockchain để đảm bảo tính toàn vẹn dữ liệu, quyền riêng tư bệnh nhân và minh bạch trong quy trình y tế.
+Backend cho hệ thống quản lý hồ sơ bệnh án điện tử tích hợp Blockchain.
 
-## 1. Thông tin Blockchain (Mandatory)
-- **Mạng thử nghiệm:** Ethereum Sepolia (ChainID: `11155111`)
-- **Explorer:** [Sepolia Etherscan](https://sepolia.etherscan.io/)
+Project sử dụng:
 
-### Smart Contract Addresses:
-- **IdentityManager:** `0xBeDC86c7ed2D3BD50b1E06abC5Bb8e6438cFc424`
-- **DynamicAccessControl:** `0x3456d590C5e48bfA5057388457784564267F200c`
-- **MedicalLedger:** `0x78B739a403f4cE733cF6cD198427a5B006345aD6`
+- Express.js
+- MongoDB với Mongoose
+- Babel để chạy mã nguồn ES module trong môi trường Node.js
+- Swagger để sinh tài liệu API tại `/docs`
+- Hardhat để deploy smart contract lên Sepolia
 
----
+## Mục lục
 
-## 2. Hướng dẫn cài đặt & Chạy dự án
+- [1. Yêu cầu hệ thống](#1-yêu-cầu-hệ-thống)
+- [2. Cấu trúc chạy của project](#2-cấu-trúc-chạy-của-project)
+- [3. Cài đặt local](#3-cài-đặt-local)
+- [4. Biến môi trường cần cấu hình](#4-biến-môi-trường-cần-cấu-hình)
+- [5. Chạy backend local](#5-chạy-backend-local)
+- [6. Swagger API docs](#6-swagger-api-docs)
+- [7. Build production](#7-build-production)
+- [8. Chạy bằng Docker và Docker Compose](#8-chạy-bằng-docker-và-docker-compose)
+- [9. GitHub Actions và quy trình deploy](#9-github-actions-và-quy-trình-deploy)
+- [10. Deploy smart contract bằng Hardhat](#10-deploy-smart-contract-bằng-hardhat)
+- [11. Tài liệu liên quan](#11-tài-liệu-liên-quan)
+- [12. Lưu ý quan trọng của codebase hiện tại](#12-lưu-ý-quan-trọng-của-codebase-hiện-tại)
 
-### Yêu cầu hệ thống:
-- Node.js >= 18.x
-- MongoDB Atlas (Off-chain storage)
-- Ví MetaMask (đã chuyển sang mạng Sepolia và có ETH testnet)
+## 1. Yêu cầu hệ thống
 
-### Các bước khởi chạy:
-1. **Clone project:**
-   ```bash
-   git clone [link-repo]
-   cd IE213_BE
-   ```
-2. **Cài đặt thư viện:**
-   ```bash
-   npm install
-   ```
-3. **Cấu hình môi trường:**
-   Tạo file `.env` từ mẫu `.env.example` và điền các thông số:
-   - `MONGODB_URI`: Link kết nối MongoDB Atlas.
-   - `BLOCKCHAIN_RPC_URL`: Link Alchemy/Infura Sepolia.
-   - `ADMIN_PRIVATE_KEY`: Private key ví admin (để deploy/quản trị).
-   - `IDENTITY_MANAGER_ADDRESS`: Địa chỉ contract Identity.
-   - (Xem thêm file `docs/DOCS_BACKEND_BLOCKCHAIN.md` để biết chi tiết)
+- Node.js `>= 18.x`
+- npm
+- MongoDB instance hoặc MongoDB Atlas
+- RPC endpoint cho Sepolia
+- MetaMask nếu cần test các luồng ký giao dịch ở frontend
 
-4. **Khởi động server:**
-   ```bash
-   npm run dev
-   ```
+## 2. Cấu trúc chạy của project
 
----
+Backend khởi động từ file:
 
-## 3. Tối ưu kỹ thuật (Key Features)
+```bash
+src/server.js
+```
 
-Dự án đáp ứng các tiêu chuẩn kỹ thuật nâng cao của môn học IE213:
+Luồng chính khi chạy server:
 
-### A. Cơ chế Fallback RPC (Độ ổn định)
-Hệ thống sử dụng mảng đa RPC URLs. Khi một node RPC (như Alchemy) bị lỗi hoặc quá tải, Backend sẽ tự động chuyển sang các node dự phòng (Infura, Public Nodes) mà không làm gián đoạn ứng dụng.
+- load biến môi trường từ `dotenv`
+- kết nối MongoDB qua `src/config/mongodb.js`
+- mount API tại prefix `/v1`
+- mount Swagger UI tại `/docs`
+- chạy cron job lịch hẹn
 
-### B. Bảo mật "Zero-Key Server"
-Backend hoạt động ở chế độ **Read-only**. Tuyệt đối không lưu Private Key người dùng trên server. Mọi giao dịch thay đổi dữ liệu đều do người dùng trực tiếp xác nhận qua MetaMask.
+Một số route chính:
 
-### C. Tính toàn vẹn dữ liệu (Hash-Chaining)
-Áp dụng kỹ thuật móc xích mã băm (Keccak256). Mã băm của chẩn đoán bao gồm mã băm của kết quả xét nghiệm và triệu chứng ban đầu. Điều này tạo ra bằng chứng không thể chối bỏ trên Blockchain cho toàn bộ vòng đời hồ sơ bệnh án.
+- `GET /` - endpoint test đơn giản
+- `GET /docs` - Swagger UI
+- `POST /v1/auth/*`
+- `GET /v1/patients/*`
+- `GET /v1/doctors/*`
+- `GET /v1/lab-techs/*`
+- `GET /v1/admins/*`
 
-### D. Xác thực Web3 (Nonce-based Signature)
-Hệ thống đăng nhập không dùng mật khẩu truyền thống, mà sử dụng cơ chế ký thông điệp bằng ví (EIP-191) để xác thực định danh người dùng một cách bảo mật nhất.
+## 3. Cài đặt local
 
----
+### Bước 1: clone repository
 
-## 4. Tài liệu hướng dẫn
-- [Hướng dẫn cho Frontend](docs/DOCS_FRONTEND_WEB3.md)
-- [Hướng dẫn cho Backend](docs/DOCS_BACKEND_BLOCKCHAIN.md)
+```bash
+git clone <repo-url>
+cd IE213_BE
+```
 
-**Nhóm thực hiện: [Tên nhóm của bạn]**
-**Giảng viên hướng dẫn: ThS. Võ Tấn Khoa**
+### Bước 2: cài dependencies
+
+```bash
+npm install
+```
+
+## 4. Biến môi trường cần cấu hình
+
+Project đọc biến môi trường trong `src/config/environment.js` và `hardhat.config.cjs`.
+
+Bạn cần tạo file `.env` ở thư mục gốc project.
+
+Ví dụ tối thiểu:
+
+```env
+MONGODB_URI=mongodb+srv://<username>:<password>@<cluster-url>
+DATABASE_NAME=ie213
+
+APP_HOST=localhost
+APP_PORT=8017
+
+ACCESS_TOKEN_SECRET_SIGNATURE=your_access_secret
+ACCESS_TOKEN_LIFE=20m
+REFRESH_TOKEN_SECRET_SIGNATURE=your_refresh_secret
+REFRESH_TOKEN_LIFE=14d
+
+BLOCKCHAIN_RPC_URL=https://sepolia.infura.io/v3/<project-id>
+SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<api-key>
+
+IDENTITY_MANAGER_ADDRESS=0x...
+DYNAMIC_ACCESS_CONTROL_ADDRESS=0x...
+MEDICAL_LEDGER_ADDRESS=0x...
+
+INITIAL_ADMIN_WALLET_ADDRESS=0x...
+ETHERSCAN_API_KEY=<etherscan-api-key>
+
+ADMIN_PRIVATE_KEY=<only-required-when-deploying-contracts>
+```
+
+### Ý nghĩa các biến chính
+
+- `MONGODB_URI`
+  - chuỗi kết nối MongoDB
+
+- `DATABASE_NAME`
+  - tên database MongoDB sẽ được dùng khi connect
+
+- `APP_HOST`
+  - host logic của app, hiện code fallback về `localhost`
+
+- `APP_PORT`
+  - cổng backend sử dụng, nếu không có sẽ mặc định `8017`
+
+- `ACCESS_TOKEN_SECRET_SIGNATURE`
+  - secret ký access token
+
+- `ACCESS_TOKEN_LIFE`
+  - thời gian sống của access token
+
+- `REFRESH_TOKEN_SECRET_SIGNATURE`
+  - secret ký refresh token
+
+- `REFRESH_TOKEN_LIFE`
+  - thời gian sống của refresh token
+
+- `BLOCKCHAIN_RPC_URL`
+  - RPC chính cho backend blockchain read/verify
+
+- `SEPOLIA_RPC_URL`
+  - RPC Sepolia dự phòng hoặc dùng cho Hardhat deploy
+
+- `IDENTITY_MANAGER_ADDRESS`
+  - địa chỉ smart contract `IdentityManager`
+
+- `DYNAMIC_ACCESS_CONTROL_ADDRESS`
+  - địa chỉ smart contract `DynamicAccessControl`
+
+- `MEDICAL_LEDGER_ADDRESS`
+  - địa chỉ smart contract `MedicalLedger`
+
+- `INITIAL_ADMIN_WALLET_ADDRESS`
+  - ví admin khởi tạo ban đầu
+
+- `ETHERSCAN_API_KEY`
+  - dùng khi verify contract hoặc tích hợp Etherscan
+
+- `ADMIN_PRIVATE_KEY`
+  - chỉ bắt buộc khi deploy contract bằng Hardhat
+
+## 5. Chạy backend local
+
+### Chạy chế độ development
+
+```bash
+npm run dev
+```
+
+Script này dùng:
+
+```bash
+nodemon --exec babel-node ./src/server.js
+```
+
+Sau khi chạy thành công:
+
+- API base URL: `http://localhost:8017` hoặc `http://localhost:<APP_PORT>`
+- Swagger UI: `http://localhost:8017/docs`
+
+### Kiểm tra nhanh
+
+Mở trình duyệt hoặc dùng curl:
+
+```bash
+curl http://localhost:8017/
+```
+
+## 6. Swagger API docs
+
+Swagger được cấu hình trong:
+
+```bash
+src/config/swagger.js
+```
+
+Nguồn comment Swagger được lấy từ:
+
+```bash
+src/swagger/**/*.js
+```
+
+Sau khi server chạy, mở:
+
+```bash
+http://localhost:<APP_PORT>/docs
+```
+
+## 7. Build production
+
+### Build mã nguồn
+
+```bash
+npm run build
+```
+
+Script build hiện tại:
+
+```bash
+npm run clean && npm run build-babel
+```
+
+Output hiện tại được tạo ra tại:
+
+```bash
+build/src
+```
+
+### Chạy production theo script hiện có
+
+```bash
+npm run production
+```
+
+Script này chạy:
+
+```bash
+node ./build/src/server.js
+```
+
+## 8. Chạy bằng Docker và Docker Compose
+
+Repo hiện có sẵn:
+
+- `Dockerfile`
+- `docker-compose.yml`
+
+### Chạy bằng Docker Compose
+
+Tạo file `.env.production` trước, sau đó chạy:
+
+```bash
+docker compose up -d --build
+```
+
+Theo `docker-compose.yml` hiện tại:
+
+- service name: `api`
+- container name: `ehr_api_prod`
+- port map: `1306:1306`
+- env file: `.env.production`
+
+### Dừng container
+
+```bash
+docker compose down
+```
+
+### Xem log
+
+```bash
+docker compose logs -f
+```
+
+## 9. GitHub Actions và quy trình deploy
+
+Workflow hiện tại nằm ở:
+
+```bash
+.github/workflows/deploy.yml
+```
+
+Workflow này chạy khi:
+
+- push vào nhánh `main`
+
+Các bước deploy hiện tại:
+
+- checkout source code
+- SSH vào server remote bằng `appleboy/ssh-action`
+- đi tới thư mục `/app/IE213_BE`
+- `git pull origin main`
+- `docker compose down`
+- `docker compose up -d --build`
+- `docker image prune -f`
+
+### Secrets GitHub Actions cần có
+
+- `REMOTE_HOST`
+- `REMOTE_USER`
+- `SSH_PRIVATE_KEY`
+
+Điều này nghĩa là server deploy cần:
+
+- đã clone sẵn repo vào `/app/IE213_BE`
+- đã cài Docker và Docker Compose
+- có sẵn file `.env.production`
+
+## 10. Deploy smart contract bằng Hardhat
+
+Project có cấu hình Hardhat tại:
+
+```bash
+hardhat.config.cjs
+```
+
+Network quan trọng đang dùng:
+
+- `hardhat`
+- `sepolia`
+
+Script deploy contract:
+
+```bash
+scripts/deploy.cjs
+```
+
+Script này deploy 3 contract:
+
+- `IdentityManager`
+- `DynamicAccessControl`
+- `MedicalLedger`
+
+### Chạy deploy Sepolia
+
+```bash
+npx hardhat run scripts/deploy.cjs --network sepolia
+```
+
+Sau khi deploy, script sẽ:
+
+- in địa chỉ contract ra terminal
+- tạo file `deployment.json`
+- gợi ý các biến `.env` cần cập nhật
+
+Để deploy được, bạn cần ít nhất:
+
+- `SEPOLIA_RPC_URL` hoặc `BLOCKCHAIN_RPC_URL`
+- `ADMIN_PRIVATE_KEY`
+- `ETHERSCAN_API_KEY` nếu muốn verify contract
+
+## 11. Tài liệu liên quan
+
+- `docs/DOCS_FRONTEND_API_WEB3_DETAILED.md`
+- `docs/DOCS_SYSTEM_ARCHITECTURE_WEB3.md`
+
+## 12. Lưu ý quan trọng của codebase hiện tại
+
+README này được viết theo đúng trạng thái repo hiện tại, và có một vài điểm bạn nên biết:
+
+### 1. Dockerfile đang lệch với output build hiện tại
+
+`package.json` build ra thư mục:
+
+```bash
+build/src
+```
+
+nhưng `Dockerfile` hiện đang copy và chạy từ:
+
+```bash
+dist/server.js
+```
+
+Vì vậy, nếu chạy Docker theo trạng thái hiện tại mà chưa chỉnh Dockerfile hoặc script build, container có thể không start đúng.
+
+### 2. Docker Compose healthcheck đang gọi `/health`
+
+`docker-compose.yml` đang dùng healthcheck:
+
+```bash
+http://localhost:1306/health
+```
+
+nhưng backend hiện tại không khai báo route `/health` trong `src/server.js`, nên healthcheck có thể fail dù app vẫn chạy.
+
+### 3. Cổng trong code và cổng trong Docker Compose cần đồng bộ
+
+Trong code, app đọc cổng từ `APP_PORT`.
+
+Trong `docker-compose.yml`, môi trường lại đang đặt `PORT=1306`.
+
+Để container chạy ổn định, bạn nên đảm bảo `.env.production` có:
+
+```env
+APP_PORT=1306
+```
+
+### 4. Swagger server URL lấy theo `APP_PORT`
+
+Swagger config hiện build `servers` dựa trên `APP_PORT`, nên nếu đổi cổng runtime, bạn cũng nên kiểm tra lại URL trong trang `/docs`.
