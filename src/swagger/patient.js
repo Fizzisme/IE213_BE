@@ -467,6 +467,40 @@
 
 /**
  * @swagger
+ * /v1/patients/medical-records/{medicalRecordId}/verify:
+ *   get:
+ *     summary: Đối chiếu tính toàn vẹn hồ sơ bệnh án của chính bệnh nhân với Blockchain
+ *     tags: [Patient]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: medicalRecordId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           pattern: '^[0-9a-fA-F]{24}$'
+ *         description: ID hồ sơ bệnh án
+ *     responses:
+ *       200:
+ *         description: Kết quả đối chiếu dữ liệu hồ sơ với Blockchain
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiEnvelope'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/IntegrityResult'
+ *       403:
+ *         description: Bạn không có quyền đối chiếu hồ sơ bệnh án này
+ *       404:
+ *         description: Không tìm thấy hồ sơ bệnh án
+ */
+
+/**
+ * @swagger
  * /v1/patients/notifications/me:
  *   get:
  *     summary: Lấy danh sách thông báo của bệnh nhân

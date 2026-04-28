@@ -645,6 +645,12 @@ const getMyMedicalRecordDetail = async (medicalRecordId, currentUser) => {
     return medicalRecord;
 };
 
+const verifyMyMedicalRecordIntegrity = async (medicalRecordId, currentUser) => {
+    await getMyMedicalRecordDetail(medicalRecordId, currentUser);
+
+    return await verifyIntegrity(medicalRecordId);
+};
+
 export const medicalRecordService = {
     createNew,
     diagnosis,
@@ -655,4 +661,5 @@ export const medicalRecordService = {
     verifyTx,
     getMyMedicalRecords,
     getMyMedicalRecordDetail,
+    verifyMyMedicalRecordIntegrity,
 };

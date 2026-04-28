@@ -145,6 +145,23 @@ const getMyMedicalRecordDetail = async (req, res, next) => {
 };
 
 /**
+ * Verify tính toàn vẹn hồ sơ bệnh án của chính bệnh nhân hiện tại
+ */
+const verifyMyMedicalRecordIntegrity = async (req, res, next) => {
+    try {
+        const result =
+            await medicalRecordService.verifyMyMedicalRecordIntegrity(
+                req.params.medicalRecordId,
+                req.user
+            );
+
+        res.status(StatusCodes.OK).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
  * Verify tính toàn vẹn dữ liệu hồ sơ (integrity)
  * - So sánh dữ liệu trong DB với dữ liệu lưu trên blockchain
  */
@@ -198,4 +215,5 @@ export const medicalRecordController = {
     verifyTx,
     getMyMedicalRecords,
     getMyMedicalRecordDetail,
+    verifyMyMedicalRecordIntegrity,
 };

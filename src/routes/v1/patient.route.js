@@ -75,6 +75,13 @@ Router.get(
     medicalRecordController.getMyMedicalRecordDetail,
 );
 
+// Đối chiếu tính toàn vẹn hồ sơ bệnh án của chính mình với Blockchain
+Router.get(
+    '/medical-records/:medicalRecordId/verify',
+    medicalRecordValidation.medicalRecordId,
+    medicalRecordController.verifyMyMedicalRecordIntegrity,
+);
+
 /**
  * ==============================
  * BLOCKCHAIN ACCESS CONTROL
