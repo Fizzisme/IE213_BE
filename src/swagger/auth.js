@@ -272,8 +272,6 @@
  *   delete:
  *     summary: Đăng xuất tài khoản và xóa cookie access/refresh token
  *     tags: [Auth]
- *     security:
- *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Đăng xuất thành công
@@ -285,44 +283,6 @@
  *               timestamp: '2026-04-26T08:02:00.000Z'
  *               path: /v1/auth/logout
  *               responseTime: 3 ms
- *       401:
- *         description: Unauthorized
- */
-
-/**
- * @swagger
- * /v1/auth/me:
- *   get:
- *     summary: Lấy thông tin user hiện tại từ token/cookie
- *     tags: [Auth]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Thông tin user hiện tại
- *         content:
- *           application/json:
- *             schema:
- *               allOf:
- *                 - $ref: '#/components/schemas/ApiEnvelope'
- *                 - type: object
- *                   properties:
- *                     data:
- *                       type: object
- *                       properties:
- *                         userId:
- *                           type: string
- *                         role:
- *                           type: string
- *                           example: DOCTOR
- *                         status:
- *                           type: string
- *                           example: ACTIVE
- *                         hasProfile:
- *                           type: boolean
- *                           example: true
- *       401:
- *         description: Unauthorized
  */
 
 /**

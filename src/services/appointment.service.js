@@ -9,42 +9,52 @@ import { blockchainProvider } from '~/blockchains/provider';
 import { blockchainAbis, dynamicAccessControlContract, identityManagerContract } from '~/blockchains/contract';
 import { validateContractTransaction } from '~/utils/blockchainVerification';
 
+/**
+ * Mapping role trên Blockchain (smart contract)
+ */
 const BLOCKCHAIN_ROLE = {
     PATIENT: 1,
     DOCTOR: 2,
 };
 
+/**
+ * Tạo lịch hẹn
+ */
 const createAppointment = async (data, patientId) => {
     const { appointmentDateTime, serviceId, patientDescription } = data;
-    console.log(data);
 
-    // Hệ thống set cứng 1 bác sĩ
+    // Tạm thời fix cứng doctor (demo)
     const doctorId = '69b8ec3de5bed9e6a3808110';
 
-    // validate
+    // Validate dữ liệu đầu vào
     if (!appointmentDateTime || !serviceId || !doctorId) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu dữ liệu (ngày giờ, dịch vụ hoặc bác sĩ)');
     }
 
+    // Không cho đặt lịch trong quá khứ
     const appointmentDate = new Date(appointmentDateTime);
     if (appointmentDate < new Date()) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Không thể đặt lịch hẹn trong quá khứ');
     }
 
-    // check service
+    // Kiểm tra service tồn tại
     const service = await serviceModel.getServiceById(serviceId);
     if (!service) {
         throw new ApiError(StatusCodes.NOT_FOUND, 'Dịch vụ không tồn tại');
     }
 
-    // --- BLOCKCHAIN UX OPTIMIZATION ---
-    // Kiểm tra ví bác sĩ trước khi tạo lịch để đảm bảo luồng cấp quyền hoạt động
+    /**
+     * Tối ưu UX blockchain:
+     * Kiểm tra trước bác sĩ có ví hay chưa để tránh fail flow cấp quyền
+     */
     const doctorProfile = await doctorModel.DoctorModel.findById(doctorId);
     if (!doctorProfile) {
         throw new ApiError(StatusCodes.NOT_FOUND, 'Bác sĩ không tồn tại');
     }
 
     const doctorUser = await userModel.findById(doctorProfile.userId);
+
+    // Lấy wallet từ authProviders
     const doctorWallet = doctorUser.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
 
     if (!doctorWallet) {
@@ -54,21 +64,24 @@ const createAppointment = async (data, patientId) => {
         );
     }
 
-    // create
+    // Tạo lịch hẹn
     const newAppointment = await appointmentModel.createNew({
-        patientId: patientId,
+        patientId,
         serviceId,
-        doctorId: doctorId,
+        doctorId,
         appointmentDateTime: appointmentDate,
         patientDescription,
         price: service.price,
     });
 
+    /**
+     * Trả metadata để frontend gọi MetaMask
+     */
     const blockchainMetadata = {
         action: 'GRANT_ACCESS',
         contractAddress: dynamicAccessControlContract.target,
         method: 'grantAccess',
-        args: [doctorWallet, 24],
+        args: [doctorWallet, 24], // cấp quyền 24h
         doctorWallet,
         durationHours: 24,
         message: 'Vui lòng ký xác nhận cấp quyền xem hồ sơ cho Bác sĩ qua MetaMask',
@@ -80,15 +93,14 @@ const createAppointment = async (data, patientId) => {
     };
 };
 
-// --- BLOCKCHAIN ACCESS CONTROL LOGIC ---
-
 /**
- * Bước 1: Chuẩn bị thông tin để Bệnh nhân cấp quyền cho Bác sĩ qua MetaMask.
+ * Bước 1: Chuẩn bị dữ liệu để cấp quyền cho bác sĩ (frontend ký MetaMask)
  */
 const prepareGrantAccess = async (appointmentId) => {
     const appointment = await appointmentModel.getAppointmentById(appointmentId);
     if (!appointment) throw new ApiError(StatusCodes.NOT_FOUND, 'Lịch hẹn không tồn tại');
 
+    // Lấy thông tin bệnh nhân
     const patientProfile = await patientModel.findById(appointment.patientId);
     if (!patientProfile) {
         throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy thông tin bệnh nhân');
@@ -96,16 +108,17 @@ const prepareGrantAccess = async (appointmentId) => {
 
     const patientUser = await userModel.findById(patientProfile.userId);
     const patientWallet = patientUser?.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
+
     if (!patientWallet) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Bệnh nhân chưa liên kết ví Blockchain');
     }
 
-    // Kiểm tra doctorId đã được phân công chưa
+    // Kiểm tra đã có doctor chưa
     if (!appointment.doctorId) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Lịch hẹn chưa được phân công bác sĩ');
     }
 
-    // Lấy thông tin Doctor User để lấy Wallet
+    // Lấy ví bác sĩ
     const doctorProfile = await doctorModel.findOneByUserId(appointment.doctorId);
     if (!doctorProfile) throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy thông tin bác sĩ');
 
@@ -116,6 +129,9 @@ const prepareGrantAccess = async (appointmentId) => {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Bác sĩ chưa liên kết ví Blockchain');
     }
 
+    /**
+     * Kiểm tra role đã được đăng ký trên blockchain chưa
+     */
     const [isPatientActiveOnChain, isDoctorActiveOnChain] = await Promise.all([
         identityManagerContract.hasRole(patientWallet, BLOCKCHAIN_ROLE.PATIENT),
         identityManagerContract.hasRole(doctorWallet, BLOCKCHAIN_ROLE.DOCTOR),
@@ -124,58 +140,50 @@ const prepareGrantAccess = async (appointmentId) => {
     if (!isPatientActiveOnChain) {
         throw new ApiError(
             StatusCodes.BAD_REQUEST,
-            'Bệnh nhân chưa được đăng ký vai trò PATIENT trên Blockchain, chưa thể cấp quyền',
+            'Bệnh nhân chưa được đăng ký vai trò PATIENT trên Blockchain',
         );
     }
 
     if (!isDoctorActiveOnChain) {
         throw new ApiError(
             StatusCodes.BAD_REQUEST,
-            'Bác sĩ chưa được kích hoạt vai trò DOCTOR trên Blockchain, chưa thể nhận quyền truy cập',
+            'Bác sĩ chưa được kích hoạt vai trò DOCTOR trên Blockchain',
         );
     }
 
     return {
-        message: 'Thông tin sẵn sàng, vui lòng ký cấp quyền xem hồ sơ cho Bác sĩ qua MetaMask',
+        message: 'Thông tin sẵn sàng, vui lòng ký cấp quyền qua MetaMask',
         contractAddress: dynamicAccessControlContract.target,
         method: 'grantAccess',
         args: [doctorWallet, 24],
         doctorWallet,
-        durationHours: 24, // Mặc định cấp quyền xem trong 24h
+        durationHours: 24,
         appointmentId,
     };
 };
 
 /**
- * Bước 2: Xác minh giao dịch grantAccess thành công trên Blockchain.
+ * Bước 2: Verify transaction grantAccess
  */
 const verifyGrantAccess = async (appointmentId, txHash, currentUser) => {
-    // 1. Lấy lại dữ liệu cuộc hẹn để biết giao dịch này đang cấp quyền cho bác sĩ nào.
     const appointment = await appointmentModel.getAppointmentById(appointmentId);
     if (!appointment) {
         throw new ApiError(StatusCodes.NOT_FOUND, 'Lịch hẹn không tồn tại');
     }
 
-    // 2. Suy ra ví bác sĩ đích từ appointment để đối chiếu với calldata của tx.
+    // Lấy wallet bác sĩ
     const doctorProfile = await doctorModel.findOneByUserId(appointment.doctorId);
-    if (!doctorProfile) {
-        throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy thông tin bác sĩ');
-    }
-
     const doctorUser = await userModel.findById(doctorProfile.userId);
     const doctorWallet = doctorUser?.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
-    if (!doctorWallet) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Bác sĩ chưa liên kết ví Blockchain');
-    }
 
+    // Lấy wallet bệnh nhân
     const patientUser = await userModel.findById(currentUser._id);
     const patientWallet = patientUser?.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
-    if (!patientWallet) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Bệnh nhân chưa liên kết ví Blockchain');
-    }
 
-    // 3. Đọc transaction thật từ chain và kiểm tra đúng contract / method / args grantAccess.
+    // Lấy transaction từ blockchain
     const tx = await blockchainProvider.getTransaction(txHash);
+
+    // Validate đúng contract + method + args
     validateContractTransaction({
         tx,
         abi: blockchainAbis.DynamicAccessControl,
@@ -184,28 +192,29 @@ const verifyGrantAccess = async (appointmentId, txHash, currentUser) => {
         expectedArgs: [doctorWallet, '24'],
     });
 
-    // 4. Ngoài calldata đúng, tx còn phải do chính ví bệnh nhân hiện tại ký.
+    // Đảm bảo tx được ký bởi chính bệnh nhân
     if (tx.from.toLowerCase() !== patientWallet.toLowerCase()) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch cấp quyền không được ký bởi ví bệnh nhân hiện tại');
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Tx không phải do bệnh nhân ký');
     }
 
-    // 5. Chỉ khi receipt mined thành công mới được chuyển appointment sang CONFIRMED.
+    // Chờ transaction được confirm
     const receipt = await blockchainProvider.waitForTransaction(txHash);
 
     if (receipt.status === 1) {
         appointment.status = appointmentModel.APPOINTMENT_STATUS.CONFIRMED;
         await appointment.save();
+
         return {
-            message: 'Cấp quyền xem hồ sơ trên Blockchain thành công',
+            message: 'Cấp quyền thành công trên Blockchain',
             appointment,
         };
     } else {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch cấp quyền thất bại');
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Transaction thất bại');
     }
 };
 
 /**
- * Bước 3: Chuẩn bị thông tin để Bệnh nhân thu hồi quyền xem của Bác sĩ.
+ * Bước 3: Chuẩn bị revoke access
  */
 const prepareRevokeAccess = async (appointmentId) => {
     const appointment = await appointmentModel.getAppointmentById(appointmentId);
@@ -216,7 +225,7 @@ const prepareRevokeAccess = async (appointmentId) => {
     const doctorWallet = doctorUser.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
 
     return {
-        message: 'Thông tin sẵn sàng, vui lòng ký thu hồi quyền xem hồ sơ qua MetaMask',
+        message: 'Vui lòng ký thu hồi quyền qua MetaMask',
         contractAddress: dynamicAccessControlContract.target,
         method: 'revokeAccess',
         args: [doctorWallet],
@@ -225,47 +234,21 @@ const prepareRevokeAccess = async (appointmentId) => {
     };
 };
 
-const getAppointments = async () => {
-    const appointments = await appointmentModel.getAppointments();
-    if (!appointments) throw new ApiError(StatusCodes.NOT_FOUND, 'Không có danh sách lịch hẹn');
-    return appointments;
-};
-
-const getAppointmentsByPatient = async (patientId) => {
-    return await appointmentModel.getAppointmentsByPatientId(patientId);
-};
-
-const getAppointmentsByDoctor = async (doctorUserId) => {
-    const doctorProfile = await doctorModel.DoctorModel.findOne({ userId: doctorUserId, deletedAt: null });
-    if (!doctorProfile) {
-        throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy hồ sơ bác sĩ');
-    }
-
-    return await appointmentModel.getAppointmentsByDoctorId(doctorProfile._id);
-};
-
 /**
- * Bước 4: Xác minh giao dịch revokeAccess thành công trên Blockchain.
+ * Bước 4: Verify revoke access
  */
 const verifyRevokeAccess = async (appointmentId, txHash, currentUser) => {
-    // 1. Lấy appointment gốc để biết đang thu hồi quyền xem của bác sĩ nào.
     const appointment = await appointmentModel.getAppointmentById(appointmentId);
-    if (!appointment) {
-        throw new ApiError(StatusCodes.NOT_FOUND, 'Lịch hẹn không tồn tại');
-    }
 
     const doctorProfile = await doctorModel.findOneByUserId(appointment.doctorId);
     const doctorUser = await userModel.findById(doctorProfile.userId);
     const doctorWallet = doctorUser?.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
+
     const patientUser = await userModel.findById(currentUser._id);
     const patientWallet = patientUser?.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
 
-    if (!doctorWallet || !patientWallet) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Thiếu dữ liệu ví blockchain để xác minh giao dịch thu hồi quyền');
-    }
-
-    // 2. Tx phải gọi đúng revokeAccess với đúng doctorWallet mà appointment đang gắn tới.
     const tx = await blockchainProvider.getTransaction(txHash);
+
     validateContractTransaction({
         tx,
         abi: blockchainAbis.DynamicAccessControl,
@@ -274,42 +257,51 @@ const verifyRevokeAccess = async (appointmentId, txHash, currentUser) => {
         expectedArgs: [doctorWallet],
     });
 
-    // 3. Tx thu hồi cũng phải do chính ví bệnh nhân hiện tại ký.
     if (tx.from.toLowerCase() !== patientWallet.toLowerCase()) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch thu hồi quyền không được ký bởi ví bệnh nhân hiện tại');
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Tx không phải do bệnh nhân ký');
     }
 
-    // 4. Chờ receipt để chắc giao dịch đã lên block và không bị revert.
     const receipt = await blockchainProvider.waitForTransaction(txHash);
 
     if (receipt.status === 1) {
-        return 'Thu hồi quyền xem hồ sơ trên Blockchain thành công';
+        return 'Thu hồi quyền thành công';
     } else {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch thu hồi quyền thất bại');
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Transaction thất bại');
     }
 };
 
+/**
+ * Hủy lịch hẹn
+ */
 const cancelMyAppointment = async (appointmentId, patientId) => {
     const appointment = await appointmentModel.getAppointmentById(appointmentId);
+
     if (!appointment) {
         throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy lịch hẹn');
     }
+
+    // Check quyền
     if (appointment.patientId.toString() !== patientId.toString()) {
-        throw new ApiError(StatusCodes.FORBIDDEN, 'Bạn không có quyền hủy lịch này');
+        throw new ApiError(StatusCodes.FORBIDDEN, 'Không có quyền');
     }
+
+    // Chỉ cho hủy khi pending hoặc confirmed
     if (
         ![appointmentModel.APPOINTMENT_STATUS.PENDING, appointmentModel.APPOINTMENT_STATUS.CONFIRMED].includes(
             appointment.status,
         )
     ) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'Chỉ có thể hủy lịch đang chờ hoặc đã xác nhận');
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Không thể hủy');
     }
 
     appointment.status = 'CANCELLED';
     await appointment.save();
 
-    // --- BLOCKCHAIN UX OPTIMIZATION ---
+    /**
+     * Trả metadata revoke access nếu có doctor
+     */
     let blockchainMetadata = null;
+
     if (appointment.doctorId) {
         const doctorProfile = await doctorModel.DoctorModel.findById(appointment.doctorId);
         const doctorUser = await userModel.findById(doctorProfile.userId);
@@ -322,18 +314,21 @@ const cancelMyAppointment = async (appointmentId, patientId) => {
                 method: 'revokeAccess',
                 args: [doctorWallet],
                 doctorWallet,
-                message: 'Lịch hẹn đã hủy, vui lòng ký MetaMask để thu hồi quyền xem hồ sơ của Bác sĩ.',
+                message: 'Vui lòng ký MetaMask để thu hồi quyền',
             };
         }
     }
 
     return {
-        message: 'Hủy lịch hẹn thành công',
-        appointment: appointment,
+        message: 'Hủy lịch thành công',
+        appointment,
         blockchain: blockchainMetadata,
     };
 };
 
+/**
+ * Đặt lại lịch
+ */
 const rescheduleMyAppointment = async (appointmentId, patientId, data) => {
     const updated = await appointmentModel.findOneAndUpdateAppointment(
         {
@@ -350,34 +345,39 @@ const rescheduleMyAppointment = async (appointmentId, patientId, data) => {
     );
 
     if (!updated) {
-        throw new Error('Khong the dat lai lich (khong ton tai hoac sai trang thai)');
+        throw new Error('Không thể đặt lại lịch');
     }
 
     return updated;
 };
 
+/**
+ * Cập nhật trạng thái (doctor)
+ */
 const updateStatus = async (appointmentId, payload, userId) => {
     const appointment = await appointmentModel.findOneAndUpdateAppointment(
-        {
-            _id: appointmentId,
-        },
+        { _id: appointmentId },
         {
             ...payload,
             doctorId: userId,
         },
     );
+
     if (!appointment) throw new ApiError(StatusCodes.BAD_REQUEST, 'Cập nhật thất bại');
 
     return 'Cập nhật thành công';
 };
 
+/**
+ * Export service
+ */
 export const appointmentService = {
     createAppointment,
-    getAppointmentsByPatient,
+    getAppointmentsByPatient: async (patientId) => await appointmentModel.getAppointmentsByPatientId(patientId),
     getAppointmentsByDoctor,
     cancelMyAppointment,
     rescheduleMyAppointment,
-    getAppointments,
+    getAppointments: async () => await appointmentModel.getAppointments(),
     updateStatus,
     prepareGrantAccess,
     verifyGrantAccess,

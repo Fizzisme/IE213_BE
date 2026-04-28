@@ -10,7 +10,22 @@ import { blockchainAbis, dynamicAccessControlContract, medicalLedgerContract } f
 import { blockchainProvider } from '~/blockchains/provider';
 import { validateContractTransaction } from '~/utils/blockchainVerification';
 
-// Service tạo hồ sơ bệnh án
+// ============================================================
+// SERVICE: TẠO HỒ SƠ BỆNH ÁN MỚI
+//
+// Luồng xử lý:
+//   1. Xác nhận bệnh nhân tồn tại trong hệ thống
+//   2. Lấy địa chỉ ví Blockchain của bệnh nhân
+//   3. Kiểm tra không có hồ sơ nào đang còn dở dang (tránh tạo trùng)
+//   4. Lưu hồ sơ mới vào MongoDB
+//   5. Tính toán recordHash từ dữ liệu gốc
+//   6. Trả về thông tin để Frontend ký giao dịch qua MetaMask
+//
+// Lưu ý quan trọng: Hàm này KHÔNG tự phát giao dịch lên Blockchain.
+//   Nó chỉ chuẩn bị tham số và trả về cho Frontend tự ký.
+//   Lý do: Chỉ bác sĩ (người dùng thật) mới được phép ký, không thể
+//   dùng private key của server để thay thế.
+// ============================================================
 const createNew = async (patientId, data, currentUser) => {
     console.log(data);
     // Kiểm tra xem có bệnh nhân trong hệ thống không
@@ -22,10 +37,16 @@ const createNew = async (patientId, data, currentUser) => {
     const walletProvider = userPatient.authProviders.find((p) => p.type === 'WALLET');
     const patientWallet = walletProvider?.walletAddress;
 
+    // Bệnh nhân bắt buộc phải liên kết ví Blockchain trước khi tạo hồ sơ.
+    // Địa chỉ ví của bệnh nhân sẽ được ghi nhận trên Smart Contract
+    // như là chủ sở hữu hợp pháp của dữ liệu y tế.
     if (!patientWallet) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Bệnh nhân chưa liên kết ví Blockchain');
     }
 
+    // Chỉ cho phép một hồ sơ đang xử lý cùng lúc trên mỗi bệnh nhân.
+    // Tránh trường hợp bác sĩ tạo trùng hồ sơ, gây nhầm lẫn dữ liệu
+    // và xung đột trạng thái trên Blockchain.
     const existingRecord = await medicalRecordModel.findOneByPatientId(patientId, [
         'CREATED',
         'WAITING_RESULT',
@@ -48,14 +69,19 @@ const createNew = async (patientId, data, currentUser) => {
     // Lỗi nếu tạo hồ sơ thất bại
     if (!medicalRecord) throw new ApiError(StatusCodes.BAD_REQUEST, 'Tạo hồ sơ bệnh án thất bại');
 
-    // --- BLOCKCHAIN HASH GENERATION ---
+    // Tính toán Hash của hồ sơ bệnh án dựa trên dữ liệu gốc lúc tạo.
+    // recordHash này sẽ được lưu lên Smart Contract như một dấu ấn toàn vẹn dữ liệu.
+    // Bất kỳ thay đổi nào trong MongoDB sau này đều có thể bị phát hiện
+    // bằng cách tính lại Hash và so sánh với giá trị đang lưu trên Blockchain.
     const recordHash = generateDataHash({
         type: medicalRecord.type,
         clinicalNote: medicalRecord.clinicalNote || medicalRecord.note || '',
         patientId: medicalRecord.patientId.toString(),
     });
 
-    // Tạo audit log
+    // Ghi nhận hành động tạo hồ sơ vào audit log để phục vụ truy vết sau này.
+    // Lúc này Blockchain chưa được đồng bộ, trạng thái sẽ cập nhật
+    // sau khi Frontend ký và gọi verifyTx thành công.
     await auditLogModel.createLog({
         userId: currentUser._id,
         action: 'CREATE_MEDICAL_RECORD',
@@ -64,6 +90,11 @@ const createNew = async (patientId, data, currentUser) => {
         details: { note: 'Doctor created new medical record, waiting for blockchain sync' },
     });
 
+    // Trả về đủ thông tin để Frontend xây dựng và ký giao dịch Blockchain:
+    //   - medicalRecordId: ID của hồ sơ vừa tạo trong MongoDB
+    //   - patientWallet: địa chỉ ví bệnh nhân, dùng làm tham số trong Smart Contract
+    //   - recordHash: hash toàn vẹn dữ liệu, cũng là tham số trong Smart Contract
+    //   - blockchain: thông tin contract, method và args để Frontend gọi đúng hàm
     return {
         message: 'Hồ sơ đã được lưu, vui lòng xác nhận giao dịch trên MetaMask',
         medicalRecordId: medicalRecord._id,
@@ -76,14 +107,31 @@ const createNew = async (patientId, data, currentUser) => {
         },
     };
 };
-// Service chẩn đoán hồ sơ bệnh án
+
+// ============================================================
+// SERVICE: CHẨN ĐOÁN HỒ SƠ BỆNH ÁN
+//
+// Luồng xử lý:
+//   1. Xác nhận hồ sơ tồn tại
+//   2. Đảm bảo hồ sơ đang ở trạng thái HAS_RESULT (có kết quả xét nghiệm)
+//   3. Xác nhận kết quả xét nghiệm hợp lệ
+//   4. Cập nhật chẩn đoán vào MongoDB
+//   5. Tính toán diagnosisHash từ dữ liệu chẩn đoán
+//   6. Trả về thông tin để Frontend ký giao dịch đóng hồ sơ trên Blockchain
+//
+// Lưu ý: Chỉ hồ sơ ở trạng thái HAS_RESULT mới được chẩn đoán.
+//   Ràng buộc này đảm bảo luồng nghiệp vụ nhất quán với Smart Contract,
+//   tránh trường hợp bác sĩ bỏ qua bước xét nghiệm hoặc chẩn đoán lại
+//   hồ sơ đã hoàn tất.
+// ============================================================
 const diagnosis = async (medicalRecordId, data, currentUser) => {
-    // Kiểm tra xem đã có hồ sơ bệnh án để chuẩn đoán
+    // Kiểm tra xem đã có hồ sơ bệnh án để chẩn đoán
     const medicalRecord = await medicalRecordModel.findOneById(medicalRecordId);
     if (!medicalRecord) throw new ApiError(StatusCodes.NOT_FOUND, 'Không có hồ sơ bệnh án');
 
-    // Đảm bảo trạng thái đồng bộ 100% với Smart Contract (Chỉ HAS_RESULT mới được chẩn đoán)
-    // Ngăn chặn việc bác sĩ "nhảy cóc" hoặc chẩn đoán lại hồ sơ đã xong
+    // Đảm bảo trạng thái đồng bộ 100% với Smart Contract.
+    // Chỉ HAS_RESULT mới được chẩn đoán.
+    // Ngăn chặn việc bác sĩ "nhảy cóc" hoặc chẩn đoán lại hồ sơ đã xong.
     if (medicalRecord.status !== 'HAS_RESULT') {
         throw new ApiError(
             StatusCodes.BAD_REQUEST,
@@ -106,14 +154,20 @@ const diagnosis = async (medicalRecordId, data, currentUser) => {
     const medicalRecordDiagnosed = await medicalRecordModel.update(medicalRecordId, updateRecord);
     if (!medicalRecordDiagnosed) throw new ApiError(StatusCodes.BAD_REQUEST, 'Chẩn đoán thất bại');
 
-    // --- BLOCKCHAIN HASH GENERATION ---
+    // Tính toán Hash của dữ liệu chẩn đoán.
+    // diagnosisHash này sẽ được dùng để đóng hồ sơ trên Smart Contract (closeRecord).
+    // Việc bao gồm testResultId trong hash giúp ràng buộc chẩn đoán
+    // với đúng kết quả xét nghiệm đã được ghi nhận trước đó,
+    // tạo thành chuỗi Hash-Chaining xuyên suốt vòng đời hồ sơ.
     const diagnosisHash = generateDataHash({
         diagnosis: data.diagnosis,
         diagnosisNote: data.note || '',
         testResultId: data.testResultId.toString(),
     });
 
-    // Tạo audit log
+    // Ghi nhận hành động chẩn đoán vào audit log.
+    // Blockchain vẫn chưa được đồng bộ ở bước này,
+    // trạng thái COMPLETE chỉ được xác nhận sau khi verifyTx thành công.
     await auditLogModel.createLog({
         userId: currentUser._id,
         action: 'DIAGNOSIS_MEDICAL_RECORD',
@@ -134,12 +188,27 @@ const diagnosis = async (medicalRecordId, data, currentUser) => {
     };
 };
 
-// Hàm kiểm tra tính toàn vẹn dữ liệu xuyên suốt 3 tầng Hash-Chaining
+// ============================================================
+// SERVICE: KIỂM TRA TÍNH TOÀN VẸN DỮ LIỆU (3 TẦNG HASH-CHAINING)
+//
+// Cơ chế hoạt động:
+//   Mỗi tầng Hash được xây dựng dựa trên tầng trước (Hash-Chaining),
+//   đảm bảo không thể giả mạo dữ liệu ở bất kỳ bước nào mà không phá vỡ
+//   toàn bộ chuỗi xác minh.
+//
+//   Tầng 1 (recordHash)     - Dữ liệu ban đầu khi tạo hồ sơ
+//   Tầng 2 (resultHash)     - Kết quả xét nghiệm từ phòng Lab
+//   Tầng 3 (diagnosisHash)  - Chẩn đoán cuối cùng của bác sĩ
+//
+// Hàm sẽ dừng và trả về lỗi ngay tại tầng đầu tiên phát hiện bất thường.
+// ============================================================
 const verifyIntegrity = async (medicalRecordId) => {
     const medicalRecord = await medicalRecordModel.findOneById(medicalRecordId);
     if (!medicalRecord) throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy hồ sơ');
 
-    // --- TẦNG 1: Kiểm tra Thông tin ban đầu (recordHash) ---
+    // TẦNG 1: Kiểm tra dữ liệu ban đầu của hồ sơ (recordHash)
+    // Tính lại Hash từ dữ liệu hiện có trong MongoDB và so sánh với giá trị
+    // đã được ghi lên Blockchain lúc tạo hồ sơ (hashType = 0).
     const recordHash = generateDataHash({
         type: medicalRecord.type,
         clinicalNote: medicalRecord.clinicalNote || medicalRecord.note || '',
@@ -154,8 +223,10 @@ const verifyIntegrity = async (medicalRecordId) => {
 
     if (!isValid) return { medicalRecordId, isValid: false, failedAt: 'CREATED', status: medicalRecord.status };
 
-    // --- TẦNG 2: Kiểm tra Kết quả xét nghiệm (resultHash) ---
-    // Nếu hồ sơ đã qua bước xét nghiệm, bắt buộc phải kiểm tra tính toàn vẹn của Lab Result
+    // TẦNG 2: Kiểm tra kết quả xét nghiệm (resultHash)
+    // Chỉ thực hiện nếu hồ sơ đã qua bước xét nghiệm (trạng thái HAS_RESULT trở đi).
+    // Nếu bỏ qua tầng này khi hồ sơ đã có kết quả, kẻ tấn công
+    // có thể giả mạo dữ liệu Lab mà không bị phát hiện.
     if (['HAS_RESULT', 'DIAGNOSED', 'COMPLETE'].includes(medicalRecord.status)) {
         // Tìm kết quả xét nghiệm tương ứng
         let testResultData = null;
@@ -177,15 +248,17 @@ const verifyIntegrity = async (medicalRecordId) => {
             isValid = await medicalLedgerContract.verifyIntegrity(
                 medicalRecordId.toString(),
                 resultHash,
-                1, // hashType = 1 (testResultHash gộp recordHash)
+                1, // hashType = 1 (resultHash được tính có gộp recordHash bên trong Smart Contract)
             );
             if (!isValid)
                 return { medicalRecordId, isValid: false, failedAt: 'HAS_RESULT', status: medicalRecord.status };
         }
     }
 
-    // --- TẦNG 3: Kiểm tra Chẩn đoán cuối cùng (diagnosisHash) ---
-    // Nếu hồ sơ đã hoàn thành chẩn đoán
+    // TẦNG 3: Kiểm tra chẩn đoán cuối cùng (diagnosisHash)
+    // Chỉ thực hiện nếu hồ sơ đã hoàn thành chẩn đoán.
+    // testResultId được đưa vào công thức Hash để ràng buộc chặt chẽ
+    // chẩn đoán với đúng kết quả xét nghiệm đã dùng, hoàn thiện chuỗi Hash-Chaining.
     if (['DIAGNOSED', 'COMPLETE'].includes(medicalRecord.status)) {
         if (medicalRecord.diagnosis) {
             // Lấy lại testResultId đã dùng để băm lúc chẩn đoán
@@ -206,7 +279,7 @@ const verifyIntegrity = async (medicalRecordId) => {
             isValid = await medicalLedgerContract.verifyIntegrity(
                 medicalRecordId.toString(),
                 diagnosisHash,
-                2, // hashType = 2 (diagnosisHash gộp testResultHash)
+                2, // hashType = 2 (diagnosisHash được tính có gộp resultHash bên trong Smart Contract)
             );
             if (!isValid)
                 return { medicalRecordId, isValid: false, failedAt: 'DIAGNOSED', status: medicalRecord.status };
@@ -221,24 +294,45 @@ const verifyIntegrity = async (medicalRecordId) => {
     };
 };
 
-// Xác minh giao dịch sau khi Frontend đã ký qua MetaMask
+// ============================================================
+// SERVICE: XÁC MINH GIAO DỊCH SAU KHI FRONTEND KÝ QUA METAMASK
+//
+// Luồng xử lý:
+//   1. Xác định hồ sơ bệnh án và bước vòng đời hiện tại
+//   2. Xác định ví bác sĩ đang đăng nhập
+//   3. Đọc giao dịch thô từ Blockchain theo txHash
+//   4. Xác minh giao dịch đúng method, đúng tham số, đúng contract
+//   5. Kiểm tra người ký là đúng bác sĩ hiện tại (chống mạo danh)
+//   6. Chờ receipt xác nhận giao dịch thành công
+//   7. Cập nhật trạng thái và txHash vào MongoDB
+//
+// Đây là bước "chốt" sau mỗi hành động quan trọng trong vòng đời hồ sơ:
+//   - Sau createNew   -> trạng thái CREATED được đồng bộ Blockchain
+//   - Sau labResult   -> trạng thái chuyển sang HAS_RESULT
+//   - Sau diagnosis   -> trạng thái chuyển sang COMPLETE
+// ============================================================
 const verifyTx = async (medicalRecordId, txHash, currentUser) => {
-    // 1. Lấy hồ sơ bệnh án hiện tại để biết đang verify bước nào của vòng đời record.
+    // Lấy hồ sơ bệnh án hiện tại để biết đang xác minh ở bước nào của vòng đời
     const medicalRecord = await medicalRecordModel.findOneById(medicalRecordId);
     if (!medicalRecord) throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy hồ sơ');
 
-    // 2. Suy ra ví bác sĩ hiện tại để kiểm tra signer tx.
+    // Lấy địa chỉ ví của bác sĩ đang thực hiện yêu cầu.
+    // Dùng để xác minh rằng giao dịch trên Blockchain phải do chính ví này ký,
+    // ngăn chặn tấn công replay hoặc mạo danh từ ví khác.
     const doctorUser = await userModel.findById(currentUser._id);
     const doctorWallet = doctorUser?.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
     if (!doctorWallet) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Bác sĩ chưa liên kết ví Blockchain');
     }
 
-    // 3. Đọc transaction thô từ blockchain để đối chiếu contract call thật sự.
+    // Đọc giao dịch thô từ Blockchain để đối chiếu với những gì
+    // hệ thống kỳ vọng (contract nào, method nào, tham số nào).
     const tx = await blockchainProvider.getTransaction(txHash);
 
     if (medicalRecord.status === 'CREATED') {
-        // 4A. Nếu record đang CREATED thì tx hợp lệ phải là createRecord với patientWallet + recordHash hiện tại.
+        // Nếu hồ sơ đang ở trạng thái CREATED: giao dịch hợp lệ phải là
+        // lời gọi createRecord với đúng patientWallet và recordHash hiện tại.
+        // Mọi sai lệch (sai method, sai hash, sai ví bệnh nhân) đều bị từ chối.
         const patient = await patientModel.findById(medicalRecord.patientId);
         if (!patient) throw new ApiError(StatusCodes.NOT_FOUND, 'Bệnh nhân không tồn tại');
 
@@ -262,7 +356,8 @@ const verifyTx = async (medicalRecordId, txHash, currentUser) => {
             expectedArgs: [medicalRecordId.toString(), patientWallet, recordHash],
         });
     } else if (medicalRecord.status === 'DIAGNOSED') {
-        // 4B. Nếu record đang DIAGNOSED thì tx hợp lệ phải là closeRecord với diagnosisHash hiện tại.
+        // Nếu hồ sơ đang ở trạng thái DIAGNOSED: giao dịch hợp lệ phải là
+        // lời gọi closeRecord với đúng diagnosisHash được tính từ dữ liệu chẩn đoán hiện tại.
         const diagnosisHash = generateDataHash({
             diagnosis: medicalRecord.diagnosis,
             diagnosisNote: medicalRecord.diagnosisNote || '',
@@ -278,16 +373,20 @@ const verifyTx = async (medicalRecordId, txHash, currentUser) => {
         });
     }
 
-    // 5. Tx hợp lệ còn phải do đúng ví doctor hiện tại ký.
+    // Dù giao dịch đúng method và tham số, vẫn phải kiểm tra xem
+    // người ký có đúng là bác sĩ đang đăng nhập không.
+    // Tránh trường hợp một ví khác (kể cả bác sĩ khác) ký thay.
     if (tx.from.toLowerCase() !== doctorWallet.toLowerCase()) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Giao dịch blockchain không được ký bởi ví bác sĩ hiện tại');
     }
 
-    // Đợi Receipt từ Blockchain
+    // Chờ Receipt từ Blockchain để xác nhận giao dịch đã được đào thành công.
+    // receipt.status === 1 nghĩa là giao dịch thành công trên mạng.
     const receipt = await blockchainProvider.waitForTransaction(txHash);
 
     if (receipt.status === 1) {
-        // Tùy theo trạng thái hiện tại của Hồ sơ mà lưu txHash vào trường tương ứng
+        // Tùy theo trạng thái hiện tại của hồ sơ mà lưu txHash vào trường tương ứng.
+        // Mỗi bước trong vòng đời có một trường txHash riêng để dễ tra cứu sau này.
         let updateData = {
             'blockchainMetadata.isSynced': true,
             'blockchainMetadata.syncAt': new Date(),
@@ -300,14 +399,16 @@ const verifyTx = async (medicalRecordId, txHash, currentUser) => {
             updateData['status'] = 'HAS_RESULT';
         } else if (medicalRecord.status === 'DIAGNOSED') {
             updateData['blockchainMetadata.diagnosisTxHash'] = txHash;
-            // ĐỒNG BỘ TRẠNG THÁI: Blockchain chuyển sang COMPLETE thì Database cũng vậy
+            // Đồng bộ trạng thái: Blockchain chuyển sang COMPLETE thì MongoDB cũng vậy.
+            // Đây là nguyên tắc "Blockchain là nguồn sự thật" (Source of Truth)
+            // trong thiết kế hệ thống này.
             updateData['status'] = 'COMPLETE';
         }
 
         // Cập nhật Database
         await medicalRecordModel.update(medicalRecordId, updateData);
 
-        // Tạo audit log
+        // Ghi nhận sự kiện đồng bộ Blockchain thành công vào audit log
         await auditLogModel.createLog({
             userId: medicalRecord.createdBy,
             action: 'VERIFY_BLOCKCHAIN_SYNC',
@@ -326,7 +427,13 @@ const verifyTx = async (medicalRecordId, txHash, currentUser) => {
     }
 };
 
-// Service lấy hồ sơ bệnh án theo filter
+// ============================================================
+// SERVICE: LẤY DANH SÁCH HỒ SƠ BỆNH ÁN (CÓ LỌC VÀ TÌM KIẾM)
+//
+// Hỗ trợ lọc theo trạng thái (statusArray), sắp xếp và tìm kiếm
+// theo tên bệnh nhân hoặc số điện thoại.
+// Dành cho bác sĩ và admin quản lý toàn bộ danh sách hồ sơ.
+// ============================================================
 const getAll = async (statusArray, sortOrder, q) => {
     // Loại bỏ các document đã bị xóa mềm
     const query = {
@@ -337,7 +444,7 @@ const getAll = async (statusArray, sortOrder, q) => {
         query.status = { $in: statusArray };
     }
 
-    // Lấy cả thông tin bệnh nhân trả về
+    // Lấy kèm thông tin bệnh nhân để Frontend hiển thị
     const medicalRecords = await medicalRecordModel.MedicalRecordModel.find(query)
         .populate({
             path: 'patientId',
@@ -349,6 +456,8 @@ const getAll = async (statusArray, sortOrder, q) => {
     if (q) {
         const keyword = q.toLowerCase();
 
+        // Tìm kiếm phía server (in-memory) theo tên và số điện thoại.
+        // Cân nhắc chuyển sang MongoDB text index nếu dữ liệu lớn.
         filteredRecords = medicalRecords.filter((record) => {
             const patient = record.patientId;
             return (
@@ -358,7 +467,8 @@ const getAll = async (statusArray, sortOrder, q) => {
         });
     }
 
-    // Rename lại object thông tin bệnh nhân
+    // Đổi tên trường patientId thành patientInfo để Frontend dễ đọc
+    // và nhất quán với các API khác trong hệ thống
     return filteredRecords.map((record) => {
         const obj = record.toObject();
 
@@ -369,6 +479,14 @@ const getAll = async (statusArray, sortOrder, q) => {
     });
 };
 
+// ============================================================
+// SERVICE: LẤY DANH SÁCH HỒ SƠ BỆNH ÁN CỦA MỘT BỆNH NHÂN CỤ THỂ
+//
+// Nếu người gọi là bác sĩ, bắt buộc phải kiểm tra quyền truy cập
+// trên Smart Contract DynamicAccessControl trước khi trả dữ liệu.
+// Cơ chế này đảm bảo bệnh nhân hoàn toàn kiểm soát được ai
+// được phép xem hồ sơ của mình trên Blockchain.
+// ============================================================
 const getPatientMedicalRecords = async (patientId, currentUser) => {
     const patient = await patientModel.findById(patientId);
     if (!patient) throw new ApiError(StatusCodes.NOT_FOUND, 'Bệnh nhân không tồn tại');
@@ -381,6 +499,9 @@ const getPatientMedicalRecords = async (patientId, currentUser) => {
         const patientWallet = patientUser?.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
 
         if (doctorWallet && patientWallet) {
+            // Truy vấn trực tiếp lên Smart Contract để kiểm tra quyền truy cập.
+            // Đây là kiểm soát quyền phi tập trung: database không thể override
+            // quyết định đã được bệnh nhân ghi lên Blockchain.
             const hasAccess = await dynamicAccessControlContract.canAccess(patientWallet, doctorWallet);
             if (!hasAccess) {
                 throw new ApiError(
@@ -409,8 +530,15 @@ const getPatientMedicalRecords = async (patientId, currentUser) => {
     });
 };
 
+// ============================================================
+// SERVICE: LẤY CHI TIẾT MỘT HỒ SƠ BỆNH ÁN
+//
+// Ngoài kiểm tra quyền Blockchain (giống getPatientMedicalRecords),
+// hàm này còn tự động đính kèm kết quả xét nghiệm (testResult)
+// vào object hồ sơ trả về, hỗ trợ nhiều kịch bản lưu trữ khác nhau.
+// ============================================================
 const getDetail = async (medicalRecordId, currentUser) => {
-    // 1. TÌM BỆNH ÁN VÀ THÔNG TIN BỆNH NHÂN
+    // Lấy hồ sơ bệnh án kèm thông tin bệnh nhân
     let medicalRecord = await medicalRecordModel.MedicalRecordModel.findById(medicalRecordId).populate({
         path: 'patientId',
         select: '_id userId fullName gender birthYear phoneNumber avatar',
@@ -418,8 +546,8 @@ const getDetail = async (medicalRecordId, currentUser) => {
 
     if (!medicalRecord) throw new ApiError(StatusCodes.NOT_FOUND, 'Lấy hồ sơ thất bại');
 
-    // --- BLOCKCHAIN ACCESS CHECK ---
-    // Nếu ngườ i xem là Bác sĩ, phải kiểm tra quyền xem On-chain (DynamicAccessControl)
+    // Nếu người xem là bác sĩ, phải kiểm tra quyền xem On-chain qua DynamicAccessControl.
+    // Quyền truy cập có thể hết hạn hoặc bị bệnh nhân thu hồi bất kỳ lúc nào.
     if (currentUser.role === 'DOCTOR') {
         const doctorUser = await userModel.findById(currentUser._id);
         const doctorWallet = doctorUser.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
@@ -447,7 +575,10 @@ const getDetail = async (medicalRecordId, currentUser) => {
         delete medicalRecord.patientId;
     }
 
-    // 2. TÌM KẾT QUẢ XÉT NGHIỆM (TEST RESULT) GẮN VÀO BỆNH ÁN
+    // Đính kèm kết quả xét nghiệm vào hồ sơ trả về.
+    // Hỗ trợ 3 kịch bản lưu trữ khác nhau để tương thích với nhiều phiên bản dữ liệu:
+    //   Kịch bản A: Hồ sơ lưu sẵn testResultId hoặc relatedLabOrderIds
+    //   Kịch bản B: Tìm ngược từ bảng TestResult dựa vào medicalRecordId (cách an toàn nhất)
     try {
         let testResultData = null;
 
@@ -470,13 +601,19 @@ const getDetail = async (medicalRecordId, currentUser) => {
             medicalRecord.testResult = testResultData;
         }
     } catch (error) {
+        // Không throw error ở đây để tránh làm hỏng toàn bộ trang chi tiết
+        // chỉ vì lỗi phụ từ phòng Lab. Ghi log để điều tra sau.
         console.error('Lỗi khi đính kèm kết quả Lab vào Bệnh án:', error);
-        // Không throw error ở đây để tránh làm chết trang chi tiết nếu Lab bị lỗi
     }
 
     return medicalRecord;
 };
 
+// ============================================================
+// SERVICE: LẤY DANH SÁCH HỒ SƠ BỆNH ÁN CỦA CHÍNH BỆNH NHÂN ĐANG ĐĂNG NHẬP
+// Tìm hồ sơ bệnh nhân liên kết với userId hiện tại,
+// sau đó ủy quyền cho getPatientMedicalRecords để tránh lặp code.
+// ============================================================
 const getMyMedicalRecords = async (currentUser, statusArray = []) => {
     const patient = await patientModel.findByUserId(currentUser._id);
     if (!patient) throw new ApiError(StatusCodes.NOT_FOUND, 'Chưa có hồ sơ bệnh nhân');
@@ -484,6 +621,12 @@ const getMyMedicalRecords = async (currentUser, statusArray = []) => {
     return await getPatientMedicalRecords(patient._id.toString(), currentUser, statusArray);
 };
 
+// ============================================================
+// SERVICE: LẤY CHI TIẾT HỒ SƠ BỆNH ÁN CỦA CHÍNH BỆNH NHÂN ĐANG ĐĂNG NHẬP
+// Ngoài việc lấy chi tiết hồ sơ, còn kiểm tra thêm rằng
+// hồ sơ yêu cầu phải thực sự thuộc về bệnh nhân đang đăng nhập,
+// tránh trường hợp bệnh nhân A dùng ID hợp lệ để xem hồ sơ của bệnh nhân B.
+// ============================================================
 const getMyMedicalRecordDetail = async (medicalRecordId, currentUser) => {
     const patient = await patientModel.findByUserId(currentUser._id);
     if (!patient) throw new ApiError(StatusCodes.NOT_FOUND, 'Chưa có hồ sơ bệnh nhân');
@@ -491,6 +634,10 @@ const getMyMedicalRecordDetail = async (medicalRecordId, currentUser) => {
     const medicalRecord = await getDetail(medicalRecordId, currentUser);
     const recordPatientId = medicalRecord?.patientInfo?._id?.toString();
 
+    // Đảm bảo hồ sơ yêu cầu phải thuộc đúng bệnh nhân đang đăng nhập.
+    // Ngăn chặn tấn công IDOR (Insecure Direct Object Reference):
+    // bệnh nhân A không thể truy cập hồ sơ của bệnh nhân B
+    // dù biết medicalRecordId hợp lệ.
     if (recordPatientId !== patient._id.toString()) {
         throw new ApiError(StatusCodes.FORBIDDEN, 'Bạn không có quyền xem hồ sơ bệnh án này');
     }

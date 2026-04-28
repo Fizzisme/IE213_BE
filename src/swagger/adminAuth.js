@@ -28,14 +28,19 @@
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 accessToken:
- *                   type: string
- *                   description: JWT token dùng cho các request tiếp theo (20 minutes)
- *                 refreshToken:
- *                   type: string
- *                   description: Token dùng để refresh accessToken (14 days)
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiEnvelope'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         accessToken:
+ *                           type: string
+ *                           description: JWT token dùng cho các request tiếp theo (20 minutes)
+ *                         refreshToken:
+ *                           type: string
+ *                           description: Token dùng để refresh accessToken (14 days)
  *       400:
  *         description: Validation error - Dữ liệu không hợp lệ
  *       401:

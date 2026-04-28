@@ -148,6 +148,39 @@
 
 /**
  * @swagger
+ * /v1/doctors/appointments/{appointmentId}/update-status:
+ *   patch:
+ *     summary: Cập nhật trạng thái lịch hẹn của bác sĩ
+ *     tags: [Doctor]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: appointmentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID lịch hẹn
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [PENDING, CONFIRMED, COMPLETED, CANCELLED]
+ *                 example: COMPLETED
+ *     responses:
+ *       200:
+ *         description: Cập nhật trạng thái thành công
+ *       400:
+ *         description: Cập nhật thất bại
+ */
+
+/**
+ * @swagger
  * /v1/doctors/medical-records/{medicalRecordId}:
  *   get:
  *     summary: Lấy chi tiết hồ sơ bệnh án

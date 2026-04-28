@@ -1,4 +1,5 @@
 import { serviceService } from '~/services/service.service';
+// Lấy tất các service
 const getAllServices = async (req, res) => {
     try {
         const result = await serviceService.getAllServices();

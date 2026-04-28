@@ -7,7 +7,7 @@
  *       required:
  *         - phoneNumber
  *         - fullName
- *         - dob
+ *         - birthYear
  *       properties:
  *         phoneNumber:
  *           type: string
@@ -23,16 +23,15 @@
  *           type: string
  *           enum: [M, F]
  *           example: "M"
- *         dob:
+ *         birthYear:
  *           type: number
- *           description: Unix timestamp milliseconds
- *           example: 946684800000
+ *           description: Năm sinh của bệnh nhân
+ *           example: 1999
  *     AppointmentRequest:
  *       type: object
  *       required:
  *         - appointmentDateTime
  *         - serviceId
- *         - doctorId
  *       properties:
  *         appointmentDateTime:
  *           type: string
@@ -41,10 +40,7 @@
  *         serviceId:
  *           type: string
  *           example: 662222222222222222222222
- *         doctorId:
- *           type: string
- *           example: 661111111111111111111111
- *         description:
+ *         patientDescription:
  *           type: string
  *           example: Mệt, khát nước nhiều
  *     AppointmentBusinessPayload:
@@ -71,7 +67,7 @@
  *             appointmentDateTime:
  *               type: string
  *               format: date-time
- *             description:
+ *             patientDescription:
  *               type: string
  *             price:
  *               type: number
@@ -188,7 +184,7 @@
  *                   doctorId: 661111111111111111111111
  *                   serviceId: 662222222222222222222222
  *                   appointmentDateTime: '2026-05-01T09:30:00.000Z'
- *                   description: Mệt, khát nước nhiều
+ *                   patientDescription: Mệt, khát nước nhiều
  *                   price: 250000
  *                   status: PENDING
  *                 blockchain:
@@ -385,262 +381,125 @@
 
 /**
  * @swagger
- * v1/patients/appointments:
- *   post:
- *     summary: Tạo lịch hẹn mới cho bệnh nhân
- *     tags: [Patient]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - doctorId
- *               - serviceId
- *               - appointmentDate
- *               - appointmentTime
- *             properties:
- *               doctorId:
- *                 type: string
- *                 example: "69ba902193958774013b93e9"
- *               serviceId:
- *                 type: string
- *                 example: "69ba902193958774013b93e9"
- *               appointmentDate:
- *                 type: string
- *                 format: date
- *                 example: "2026-04-25"
- *               appointmentTime:
- *                 type: string
- *                 format: time
- *                 example: "10:00"
- *               notes:
- *                 type: string
- *                 example: "Cần tư vấn thêm"
- *     responses:
- *       201:
- *         description: Tạo lịch hẹn thành công
- *       400:
- *         description: Dữ liệu không hợp lệ
- *       401:
- *         description: Unauthorized
- *       500:
- *         description: Lỗi server
- */
-
-/**
- * @swagger
- * v1/patients/appointments/me:
+ * /v1/patients/services:
  *   get:
- *     summary: Lấy danh sách lịch hẹn của bệnh nhân
- *     tags: [Patient]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Lấy danh sách thành công
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 statusCode:
- *                   type: number
- *                   example: 200
- *                 message:
- *                   type: string
- *                   example: Success
- *                 data:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       id:
- *                         type: string
- *                       doctorId:
- *                         type: object
- *                       serviceId:
- *                         type: object
- *                       appointmentDate:
- *                         type: string
- *                       appointmentTime:
- *                         type: string
- *                       status:
- *                         type: string
- *                       notes:
- *                         type: string
- *       401:
- *         description: Unauthorized
- *       500:
- *         description: Lỗi server
- */
-
-/**
- * @swagger
- * v1/patients/services:
- *   get:
- *     summary: Lấy danh sách tất cả dịch vụ khám bệnh
+ *     summary: Lấy danh sách dịch vụ khám bệnh
  *     tags: [Patient]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Lấy danh sách dịch vụ thành công
+ */
+
+/**
+ * @swagger
+ * /v1/patients/medical-records:
+ *   get:
+ *     summary: Lấy danh sách hồ sơ bệnh án của bệnh nhân hiện tại
+ *     tags: [Patient]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Filter theo trạng thái, có thể truyền nhiều giá trị, ví dụ CREATED,HAS_RESULT
+ *         example: CREATED,HAS_RESULT
+ *     responses:
+ *       200:
+ *         description: Danh sách hồ sơ bệnh án của bệnh nhân hiện tại
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 statusCode:
- *                   type: number
- *                   example: 200
- *                 message:
- *                   type: string
- *                   example: Success
- *                 data:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       id:
- *                         type: string
- *                       name:
- *                         type: string
- *                       description:
- *                         type: string
- *                       price:
- *                         type: number
- *       401:
- *         description: Unauthorized
- *       500:
- *         description: Lỗi server
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiEnvelope'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id:
+ *                             type: string
+ *                           type:
+ *                             type: string
+ *                           status:
+ *                             type: string
+ *                           clinicalNote:
+ *                             type: string
+ *                             nullable: true
+ *                           note:
+ *                             type: string
+ *                             nullable: true
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
  */
 
 /**
  * @swagger
- * v1/patients/appointments/{id}/cancel:
- *   patch:
- *     summary: Hủy lịch hẹn của bệnh nhân
+ * /v1/patients/medical-records/{medicalRecordId}:
+ *   get:
+ *     summary: Lấy chi tiết một hồ sơ bệnh án của bệnh nhân hiện tại
  *     tags: [Patient]
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - in: path
- *         name: id
+ *         name: medicalRecordId
  *         required: true
  *         schema:
  *           type: string
- *         description: ID của lịch hẹn
+ *           pattern: '^[0-9a-fA-F]{24}$'
+ *         description: ID hồ sơ bệnh án
  *     responses:
  *       200:
- *         description: Hủy lịch hẹn thành công
- *       400:
- *         description: Dữ liệu không hợp lệ
- *       401:
- *         description: Unauthorized
+ *         description: Chi tiết hồ sơ bệnh án
+ *       403:
+ *         description: Bạn không có quyền xem hồ sơ bệnh án này
  *       404:
- *         description: Không tìm thấy lịch hẹn
- *       500:
- *         description: Lỗi server
+ *         description: Không tìm thấy hồ sơ bệnh án
  */
 
 /**
  * @swagger
- * v1/patients/appointments/{id}/reschedule:
- *   patch:
- *     summary: Đặt lại lịch hẹn của bệnh nhân
- *     tags: [Patient]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID của lịch hẹn
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - appointmentDate
- *               - appointmentTime
- *             properties:
- *               appointmentDate:
- *                 type: string
- *                 format: date
- *                 example: "2026-04-26"
- *               appointmentTime:
- *                 type: string
- *                 format: time
- *                 example: "14:00"
- *     responses:
- *       200:
- *         description: Đặt lại lịch hẹn thành công
- *       400:
- *         description: Dữ liệu không hợp lệ
- *       401:
- *         description: Unauthorized
- *       404:
- *         description: Không tìm thấy lịch hẹn
- *       500:
- *         description: Lỗi server
- */
-
-/**
- * @swagger
- * v1/patients/notifications/me:
+ * /v1/patients/notifications/me:
  *   get:
  *     summary: Lấy danh sách thông báo của bệnh nhân
  *     tags: [Patient]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *       - in: query
+ *         name: cursor
+ *         required: false
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: isRead
+ *         required: false
+ *         schema:
+ *           type: boolean
  *     responses:
  *       200:
  *         description: Lấy danh sách thông báo thành công
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 statusCode:
- *                   type: number
- *                   example: 200
- *                 message:
- *                   type: string
- *                   example: Success
- *                 data:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       id:
- *                         type: string
- *                       title:
- *                         type: string
- *                       message:
- *                         type: string
- *                       isRead:
- *                         type: boolean
- *                       createdAt:
- *                         type: string
- *       401:
- *         description: Unauthorized
- *       500:
- *         description: Lỗi server
  */
 
 /**
  * @swagger
- * v1/patients/notifications/{notificationId}/read:
+ * /v1/patients/notifications/{notificationId}/read:
  *   patch:
- *     summary: Đánh dấu thông báo đã đọc
+ *     summary: Đánh dấu một thông báo là đã đọc
  *     tags: [Patient]
  *     security:
  *       - bearerAuth: []
@@ -650,38 +509,27 @@
  *         required: true
  *         schema:
  *           type: string
- *         description: ID của thông báo
  *     responses:
  *       200:
  *         description: Đánh dấu đã đọc thành công
- *       401:
- *         description: Unauthorized
- *       404:
- *         description: Không tìm thấy thông báo
- *       500:
- *         description: Lỗi server
  */
 
 /**
  * @swagger
- * v1/patients/notifications/read-all:
+ * /v1/patients/notifications/read-all:
  *   patch:
- *     summary: Đánh dấu tất cả thông báo đã đọc
+ *     summary: Đánh dấu tất cả thông báo là đã đọc
  *     tags: [Patient]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Đánh dấu tất cả đã đọc thành công
- *       401:
- *         description: Unauthorized
- *       500:
- *         description: Lỗi server
  */
 
 /**
  * @swagger
- * v1/patients/notifications/unread/count/{userId}:
+ * /v1/patients/notifications/unread/count/{userId}:
  *   get:
  *     summary: Lấy số lượng thông báo chưa đọc
  *     tags: [Patient]
@@ -693,52 +541,29 @@
  *         required: true
  *         schema:
  *           type: string
- *         description: ID của người dùng
  *     responses:
  *       200:
- *         description: Lấy số lượng thành công
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 statusCode:
- *                   type: number
- *                   example: 200
- *                 message:
- *                   type: string
- *                   example: Success
- *                 data:
- *                   type: number
- *                   example: 5
- *       401:
- *         description: Unauthorized
- *       500:
- *         description: Lỗi server
+ *         description: Lấy số lượng thông báo chưa đọc thành công
  */
 
 /**
  * @swagger
- * v1/patients/notifications/delete-all:
+ * /v1/patients/notifications/delete-all:
  *   delete:
- *     summary: Xóa tất cả thông báo của bệnh nhân
+ *     summary: Xóa tất cả thông báo của bệnh nhân hiện tại
  *     tags: [Patient]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Xóa tất cả thông báo thành công
- *       401:
- *         description: Unauthorized
- *       500:
- *         description: Lỗi server
  */
 
 /**
  * @swagger
- * v1/patients/notifications/{notificationId}:
+ * /v1/patients/notifications/{notificationId}:
  *   delete:
- *     summary: Xóa một thông báo cụ thể
+ *     summary: Xóa một thông báo của bệnh nhân hiện tại
  *     tags: [Patient]
  *     security:
  *       - bearerAuth: []
@@ -748,14 +573,7 @@
  *         required: true
  *         schema:
  *           type: string
- *         description: ID của thông báo cần xóa
  *     responses:
  *       200:
  *         description: Xóa thông báo thành công
- *       401:
- *         description: Unauthorized
- *       404:
- *         description: Không tìm thấy thông báo
- *       500:
- *         description: Lỗi server
  */

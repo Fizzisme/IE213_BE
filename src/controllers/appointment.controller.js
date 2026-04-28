@@ -2,12 +2,28 @@ import { appointmentService } from '~/services/appointment.service';
 import { patientModel } from '~/models/patient.model';
 import { notificationService } from '~/services/notification.service';
 import { StatusCodes } from 'http-status-codes';
+
+/**
+ * Tạo lịch khám mới
+ * Flow:
+ * - Lấy user hiện tại
+ * - Tìm patient tương ứng
+ * - Gọi service tạo lịch (có thể kèm blockchain payload)
+ * - Gửi notification
+ * - Trả kết quả cho frontend
+ */
 const createAppointment = async (req, res) => {
     try {
         const userId = req.user._id;
-        const patient = await patientModel.findByUserId(userId);
-        const { appointment, blockchain } = await appointmentService.createAppointment(req.body, patient._id);
 
+        // Tìm patient theo user
+        const patient = await patientModel.findByUserId(userId);
+
+        // Tạo lịch khám + dữ liệu blockchain (nếu có)
+        const { appointment, blockchain } =
+            await appointmentService.createAppointment(req.body, patient._id);
+
+        // Tạo notification cho user
         const notiPayload = {
             senderId: null,
             senderModel: 'system',
@@ -19,11 +35,15 @@ const createAppointment = async (req, res) => {
             refId: appointment._id,
             refModel: 'appointments',
         };
-        const noti = await notificationService.createNotification(notiPayload);
+
+        await notificationService.createNotification(notiPayload);
+
         return res.status(201).json({
             message: 'Đặt lịch thành công',
             data: appointment,
-            blockchain: blockchain, // Trả về để Frontend hiện MetaMask ngay
+
+            // Trả blockchain payload để frontend gọi MetaMask
+            blockchain: blockchain,
         });
     } catch (error) {
         return res.status(error.statusCode || 400).json({
@@ -32,29 +52,49 @@ const createAppointment = async (req, res) => {
     }
 };
 
+/**
+ * Lấy danh sách lịch khám của user hiện tại
+ */
 const getMyAppointments = async (req, res, next) => {
     try {
         const userId = req.user._id;
 
+        // Tìm patient tương ứng
         const patient = await patientModel.findByUserId(userId);
 
+        // Nếu user chưa có patient record
         if (!patient) {
             return res.status(200).json([]);
         }
 
-        const result = await appointmentService.getAppointmentsByPatient(patient._id);
+        // Lấy danh sách lịch khám
+        const result = await appointmentService.getAppointmentsByPatient(
+            patient._id
+        );
+
         return res.status(200).json(result);
     } catch (error) {
         next(error);
     }
 };
 
+/**
+ * Hủy lịch khám của user
+ */
 const cancelMyAppointment = async (req, res) => {
     try {
         const appointmentId = req.params.id;
         const userId = req.user._id;
+
         const patient = await patientModel.findByUserId(userId);
-        const result = await appointmentService.cancelMyAppointment(appointmentId, patient._id);
+
+        // Gọi service hủy lịch
+        const result = await appointmentService.cancelMyAppointment(
+            appointmentId,
+            patient._id
+        );
+
+        // Gửi notification sau khi hủy
         await notificationService.createNotification({
             senderId: null,
             senderModel: 'system',
@@ -62,7 +102,8 @@ const cancelMyAppointment = async (req, res) => {
             receiverModel: 'users',
             event: 'APPOINTMENT_CANCELLED',
             title: 'Lịch khám đã hủy',
-            content: 'Bạn đã hủy lịch khám thành công. Mong sớm được phục vụ bạn lần sau.',
+            content:
+                'Bạn đã hủy lịch khám thành công. Mong sớm được phục vụ bạn lần sau.',
             refId: result.appointment._id,
             refModel: 'appointments',
             metadata: {
@@ -70,6 +111,7 @@ const cancelMyAppointment = async (req, res) => {
                 reason: 'Khách hàng chủ động hủy',
             },
         });
+
         if (result) {
             return res.status(200).json(result);
         }
@@ -80,13 +122,26 @@ const cancelMyAppointment = async (req, res) => {
     }
 };
 
+/**
+ * Đổi lịch khám
+ */
 const rescheduleMyAppointment = async (req, res) => {
     try {
         const appointmentId = req.params.id;
+
+        // Lấy patient
         const patient = await patientModel.findByUserId(req.user._id);
         const patientId = patient._id;
-        const result = await appointmentService.rescheduleMyAppointment(appointmentId, patientId, req.body);
-        // 2. Gửi thông báo sau khi đổi lịch thành công
+
+        // Gọi service đổi lịch
+        const result =
+            await appointmentService.rescheduleMyAppointment(
+                appointmentId,
+                patientId,
+                req.body
+            );
+
+        // Gửi notification sau khi đổi lịch
         await notificationService.createNotification({
             senderId: null,
             senderModel: 'system',
@@ -111,6 +166,9 @@ const rescheduleMyAppointment = async (req, res) => {
     }
 };
 
+/**
+ * Lấy tất cả lịch khám (admin hoặc hệ thống)
+ */
 const getAppointments = async (req, res, next) => {
     try {
         const result = await appointmentService.getAppointments();
@@ -120,10 +178,18 @@ const getAppointments = async (req, res, next) => {
     }
 };
 
+/**
+ * Cập nhật trạng thái lịch khám
+ */
 const updateStatus = async (req, res, next) => {
     try {
         const appointmentId = req.params.appointmentId;
-        const result = await appointmentService.updateStatus(appointmentId, req.body, req.user._id);
+
+        const result = await appointmentService.updateStatus(
+            appointmentId,
+            req.body,
+            req.user._id
+        );
 
         return res.status(StatusCodes.OK).json(result);
     } catch (e) {
@@ -131,53 +197,95 @@ const updateStatus = async (req, res, next) => {
     }
 };
 
+/**
+ * Lấy lịch khám của bác sĩ
+ */
 const getDoctorAppointments = async (req, res, next) => {
     try {
-        const result = await appointmentService.getAppointmentsByDoctor(req.user._id);
+        const result =
+            await appointmentService.getAppointmentsByDoctor(
+                req.user._id
+            );
+
         res.status(200).json(result);
     } catch (error) {
         next(error);
     }
 };
 
+/**
+ * Chuẩn bị dữ liệu grant quyền (trả về payload để frontend ký MetaMask)
+ */
 const prepareGrantAccess = async (req, res, next) => {
     try {
-        const result = await appointmentService.prepareGrantAccess(req.params.id);
+        const result =
+            await appointmentService.prepareGrantAccess(req.params.id);
+
         res.status(200).json(result);
     } catch (error) {
         next(error);
     }
 };
 
+/**
+ * Verify transaction grant quyền trên blockchain
+ */
 const verifyGrantAccess = async (req, res, next) => {
     try {
-        // Controller chỉ chuyển appointmentId + txHash + người dùng hiện tại xuống service để service verify on-chain.
-        const result = await appointmentService.verifyGrantAccess(req.params.id, req.body.txHash, req.user);
+        // Controller chỉ chuyển dữ liệu xuống service
+        // Service sẽ:
+        // - gọi RPC
+        // - verify transaction
+        // - cập nhật DB
+
+        const result =
+            await appointmentService.verifyGrantAccess(
+                req.params.id,
+                req.body.txHash,
+                req.user
+            );
+
         res.status(200).json(result);
     } catch (error) {
         next(error);
     }
 };
 
+/**
+ * Chuẩn bị revoke quyền
+ */
 const prepareRevokeAccess = async (req, res, next) => {
     try {
-        const result = await appointmentService.prepareRevokeAccess(req.params.id);
+        const result =
+            await appointmentService.prepareRevokeAccess(req.params.id);
+
         res.status(200).json(result);
     } catch (error) {
         next(error);
     }
 };
 
+/**
+ * Verify revoke quyền trên blockchain
+ */
 const verifyRevokeAccess = async (req, res, next) => {
     try {
-        // Tương tự grant access: controller không tự verify, chỉ điều phối dữ liệu cho service xử lý đầy đủ.
-        const result = await appointmentService.verifyRevokeAccess(req.params.id, req.body.txHash, req.user);
+        const result =
+            await appointmentService.verifyRevokeAccess(
+                req.params.id,
+                req.body.txHash,
+                req.user
+            );
+
         res.status(200).json(result);
     } catch (error) {
         next(error);
     }
 };
 
+/**
+ * Export controller
+ */
 export const appointmentController = {
     createAppointment,
     getMyAppointments,

@@ -136,6 +136,19 @@
  *           type: string
  *         description: Filter theo trạng thái, có thể truyền nhiều giá trị, ví dụ CREATED,HAS_RESULT
  *         example: CREATED,HAS_RESULT
+ *       - in: query
+ *         name: sort
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *         example: desc
+ *       - in: query
+ *         name: q
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Tìm theo tên hoặc số điện thoại bệnh nhân
  *     responses:
  *       200:
  *         description: Lấy danh sách hồ sơ bệnh án thành công

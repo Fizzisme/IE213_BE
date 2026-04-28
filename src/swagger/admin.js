@@ -48,6 +48,11 @@
  *           enum: [PENDING, ACTIVE, REJECTED, INACTIVE]
  *         description: Lọc theo trạng thái, mặc định PENDING
  *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Từ khóa tìm kiếm user
+ *       - in: query
  *         name: page
  *         schema:
  *           type: integer
@@ -57,11 +62,6 @@
  *         schema:
  *           type: integer
  *           default: 10
- *       - in: query
- *         name: deleted
- *         schema:
- *           type: boolean
- *         description: Nếu true, lấy danh sách user đã bị soft delete
  *     responses:
  *       200:
  *         description: Danh sách user phân trang
@@ -253,3 +253,20 @@
  *       409:
  *         description: User đã bị xóa trước đó
  */
+
+ /**
+  * @swagger
+  * /v1/admins/me:
+  *   get:
+  *     summary: Lấy thông tin cá nhân admin hiện tại
+  *     tags: [Admin]
+  *     security:
+  *       - bearerAuth: []
+  *     responses:
+  *       200:
+  *         description: Thông tin admin hiện tại
+  *       401:
+  *         description: Unauthorized
+  *       403:
+  *         description: Forbidden - Không phải ADMIN
+  */

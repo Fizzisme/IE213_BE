@@ -1,34 +1,46 @@
-FROM node:24-alpine AS builder
+# ==============================
+# STAGE 1: BUILD
+# ==============================
+FROM node:18-alpine AS builder
 
+# Tạo thư mục làm việc trong container
 WORKDIR /app
 
+# Copy package.json và lock file trước để tận dụng cache
 COPY package*.json ./
 
-RUN npm ci
+# Cài dependencies (bao gồm devDependencies)
+RUN npm install
 
+# Copy toàn bộ source code
 COPY . .
 
+# Build project (ví dụ dùng Babel hoặc TypeScript)
 RUN npm run build
 
-FROM node:24-alpine AS production
 
-RUN apk add --no-cache dumb-init
+# ==============================
+# STAGE 2: PRODUCTION
+# ==============================
+FROM node:18-alpine AS production
 
-ENV NODE_ENV=production
-ENV PORT=1306
-
+# Tạo thư mục làm việc
 WORKDIR /app
 
-COPY --chown=node:node package*.json ./
+# Copy package.json để cài lại dependencies cần thiết
+COPY package*.json ./
 
-RUN npm ci --omit=dev && npm cache clean --force
+# Chỉ cài dependencies cho production (nhẹ hơn)
+RUN npm install --omit=dev
 
-COPY --chown=node:node --from=builder /app/build ./build
+# Copy file build từ stage builder
+COPY --from=builder /app/dist ./dist
 
-COPY --chown=node:node --from=builder /app/src/swagger ./src/swagger
+# Copy các file cần thiết khác (nếu có)
+COPY --from=builder /app/.env ./
 
-USER node
+# Expose port
+EXPOSE 8080
 
-EXPOSE 1306
-
-CMD ["dumb-init", "node", "build/src/server.js"]
+# Command chạy app
+CMD ["node", "dist/server.js"]

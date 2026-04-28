@@ -62,7 +62,7 @@ const loginByWallet = async (req, res, next) => {
         next(err);
     }
 };
-
+// Bệnh nhân đăng xuất ra khỏi hệ thống
 const logout = async (req, res, next) => {
     try {
         res.clearCookie('accessToken', {
@@ -82,7 +82,7 @@ const logout = async (req, res, next) => {
         next(error);
     }
 };
-
+// Lấy thông tin người dùng hiện tại
 const getMe = async (req, res, next) => {
     try {
         const result = await authService.getMe(req.user);
@@ -91,7 +91,7 @@ const getMe = async (req, res, next) => {
         next(error);
     }
 };
-
+//  Kiểm tra refresh token còn hiệu lực và làm mới 
 const refreshToken = async (req, res, next) => {
     try {
         const { refreshToken: refreshTokenValue } = req.cookies;
