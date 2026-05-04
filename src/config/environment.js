@@ -69,4 +69,17 @@ export const env = {
 
     // API key dùng để verify contract hoặc gọi Etherscan API
     ETHERSCAN_API_KEY: process.env.ETHERSCAN_API_KEY,
+
+    // ==============================
+    // RPC CACHE CONFIG
+    // ==============================
+
+    // Cache TTLs (Time-To-Live) - milliseconds
+    RPC_ROLE_TTL: parseInt(process.env.RPC_ROLE_TTL || '86400000', 10), // 24 hours
+    RPC_ACCESS_TTL: parseInt(process.env.RPC_ACCESS_TTL || '3600000', 10), // 1 hour
+    RPC_TX_TTL: parseInt(process.env.RPC_TX_TTL || '604800000', 10), // 7 days
+    RPC_BLOCK_TTL: parseInt(process.env.RPC_BLOCK_TTL || '60000', 10), // 1 minute
+
+    // RPC Monitoring enable/disable
+    RPC_MONITORING_ENABLED: process.env.RPC_MONITORING_ENABLED === 'true',
 };

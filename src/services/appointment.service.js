@@ -8,6 +8,8 @@ import { userModel } from '~/models/user.model';
 import { blockchainProvider } from '~/blockchains/provider';
 import { blockchainAbis, dynamicAccessControlContract, identityManagerContract } from '~/blockchains/contract';
 import { validateContractTransaction } from '~/utils/blockchainVerification';
+import { rpcCache } from '~/utils/rpcCache';
+import { env } from '~/config/environment';
 
 /**
  * Mapping role trên Blockchain (smart contract)
@@ -132,9 +134,18 @@ const prepareGrantAccess = async (appointmentId) => {
     /**
      * Kiểm tra role đã được đăng ký trên blockchain chưa
      */
+    // Lưu cache: Roles được lưu cache 24 giờ (roles không đổi thường xuyên)
     const [isPatientActiveOnChain, isDoctorActiveOnChain] = await Promise.all([
-        identityManagerContract.hasRole(patientWallet, BLOCKCHAIN_ROLE.PATIENT),
-        identityManagerContract.hasRole(doctorWallet, BLOCKCHAIN_ROLE.DOCTOR),
+        rpcCache.getOrFetch(
+            `role:${patientWallet}:${BLOCKCHAIN_ROLE.PATIENT}`,
+            () => identityManagerContract.hasRole(patientWallet, BLOCKCHAIN_ROLE.PATIENT),
+            env.RPC_ROLE_TTL // 24h TTL
+        ),
+        rpcCache.getOrFetch(
+            `role:${doctorWallet}:${BLOCKCHAIN_ROLE.DOCTOR}`,
+            () => identityManagerContract.hasRole(doctorWallet, BLOCKCHAIN_ROLE.DOCTOR),
+            env.RPC_ROLE_TTL // 24h TTL
+        ),
     ]);
 
     if (!isPatientActiveOnChain) {

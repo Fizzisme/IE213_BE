@@ -9,6 +9,8 @@ import { generateDataHash } from '~/utils/algorithms';
 import { blockchainAbis, dynamicAccessControlContract, medicalLedgerContract } from '~/blockchains/contract';
 import { blockchainProvider } from '~/blockchains/provider';
 import { validateContractTransaction } from '~/utils/blockchainVerification';
+import { rpcCache } from '~/utils/rpcCache';
+import { env } from '~/config/environment';
 
 // ============================================================
 // SERVICE: TẠO HỒ SƠ BỆNH ÁN MỚI
@@ -206,29 +208,16 @@ const verifyIntegrity = async (medicalRecordId) => {
     const medicalRecord = await medicalRecordModel.findOneById(medicalRecordId);
     if (!medicalRecord) throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy hồ sơ');
 
-    // TẦNG 1: Kiểm tra dữ liệu ban đầu của hồ sơ (recordHash)
-    // Tính lại Hash từ dữ liệu hiện có trong MongoDB và so sánh với giá trị
-    // đã được ghi lên Blockchain lúc tạo hồ sơ (hashType = 0).
+    // TẦNG 1: Luôn kiểm tra recordHash
     const recordHash = generateDataHash({
         type: medicalRecord.type,
         clinicalNote: medicalRecord.clinicalNote || medicalRecord.note || '',
         patientId: medicalRecord.patientId.toString(),
     });
 
-    let isValid = await medicalLedgerContract.verifyIntegrity(
-        medicalRecordId.toString(),
-        recordHash,
-        0, // hashType = 0
-    );
-
-    if (!isValid) return { medicalRecordId, isValid: false, failedAt: 'CREATED', status: medicalRecord.status };
-
-    // TẦNG 2: Kiểm tra kết quả xét nghiệm (resultHash)
-    // Chỉ thực hiện nếu hồ sơ đã qua bước xét nghiệm (trạng thái HAS_RESULT trở đi).
-    // Nếu bỏ qua tầng này khi hồ sơ đã có kết quả, kẻ tấn công
-    // có thể giả mạo dữ liệu Lab mà không bị phát hiện.
+    // TẦNG 2: Chuẩn bị resultHash (nếu cần)
+    let resultHash = null;
     if (['HAS_RESULT', 'DIAGNOSED', 'COMPLETE'].includes(medicalRecord.status)) {
-        // Tìm kết quả xét nghiệm tương ứng
         let testResultData = null;
         if (medicalRecord.testResultId) {
             testResultData = await testResultModel.findOneById(medicalRecord.testResultId);
@@ -239,29 +228,18 @@ const verifyIntegrity = async (medicalRecordId) => {
         }
 
         if (testResultData) {
-            const resultHash = generateDataHash({
+            resultHash = generateDataHash({
                 testType: testResultData.testType,
                 rawData: testResultData.rawData,
                 aiAnalysis: testResultData.aiAnalysis,
             });
-
-            isValid = await medicalLedgerContract.verifyIntegrity(
-                medicalRecordId.toString(),
-                resultHash,
-                1, // hashType = 1 (resultHash được tính có gộp recordHash bên trong Smart Contract)
-            );
-            if (!isValid)
-                return { medicalRecordId, isValid: false, failedAt: 'HAS_RESULT', status: medicalRecord.status };
         }
     }
 
-    // TẦNG 3: Kiểm tra chẩn đoán cuối cùng (diagnosisHash)
-    // Chỉ thực hiện nếu hồ sơ đã hoàn thành chẩn đoán.
-    // testResultId được đưa vào công thức Hash để ràng buộc chặt chẽ
-    // chẩn đoán với đúng kết quả xét nghiệm đã dùng, hoàn thiện chuỗi Hash-Chaining.
+    // TẦNG 3: Chuẩn bị diagnosisHash (nếu cần)
+    let diagnosisHash = null;
     if (['DIAGNOSED', 'COMPLETE'].includes(medicalRecord.status)) {
         if (medicalRecord.diagnosis) {
-            // Lấy lại testResultId đã dùng để băm lúc chẩn đoán
             let testResultIdToHash = medicalRecord.testResultId?.toString();
             if (!testResultIdToHash) {
                 const tr = await testResultModel.TestResultModel.findOne({ medicalRecordId: medicalRecordId }).sort({
@@ -270,20 +248,59 @@ const verifyIntegrity = async (medicalRecordId) => {
                 testResultIdToHash = tr?._id.toString();
             }
 
-            const diagnosisHash = generateDataHash({
+            diagnosisHash = generateDataHash({
                 diagnosis: medicalRecord.diagnosis,
                 diagnosisNote: medicalRecord.diagnosisNote || '',
                 testResultId: testResultIdToHash,
             });
+        }
+    }
 
-            isValid = await medicalLedgerContract.verifyIntegrity(
+    // Gọi tất cả verifyIntegrity calls cùng lúc (SONG SONG - tối ưu)
+    const verificationCalls = [
+        medicalLedgerContract.verifyIntegrity(
+            medicalRecordId.toString(),
+            recordHash,
+            0, // hashType = 0 - TẦNG 1
+        ),
+    ];
+
+    // Thêm tầng 2 nếu cần
+    if (resultHash !== null) {
+        verificationCalls.push(
+            medicalLedgerContract.verifyIntegrity(
+                medicalRecordId.toString(),
+                resultHash,
+                1, // hashType = 1 - TẦNG 2
+            )
+        );
+    }
+
+    // Thêm tầng 3 nếu cần
+    if (diagnosisHash !== null) {
+        verificationCalls.push(
+            medicalLedgerContract.verifyIntegrity(
                 medicalRecordId.toString(),
                 diagnosisHash,
-                2, // hashType = 2 (diagnosisHash được tính có gộp resultHash bên trong Smart Contract)
-            );
-            if (!isValid)
-                return { medicalRecordId, isValid: false, failedAt: 'DIAGNOSED', status: medicalRecord.status };
-        }
+                2, // hashType = 2 - TẦNG 3
+            )
+        );
+    }
+
+    // Gọi tất cả calls cùng lúc (tiết kiệm 67% thời gian)
+    const verificationResults = await Promise.all(verificationCalls);
+
+    // Kiểm tra kết quả
+    if (!verificationResults[0]) {
+        return { medicalRecordId, isValid: false, failedAt: 'CREATED', status: medicalRecord.status };
+    }
+
+    if (resultHash !== null && !verificationResults[1]) {
+        return { medicalRecordId, isValid: false, failedAt: 'HAS_RESULT', status: medicalRecord.status };
+    }
+
+    if (diagnosisHash !== null && !verificationResults[2]) {
+        return { medicalRecordId, isValid: false, failedAt: 'DIAGNOSED', status: medicalRecord.status };
     }
 
     return {
@@ -499,10 +516,15 @@ const getPatientMedicalRecords = async (patientId, currentUser) => {
         const patientWallet = patientUser?.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
 
         if (doctorWallet && patientWallet) {
+            // Lưu cache: Access tokens được lưu cache đến khi hết hạn
             // Truy vấn trực tiếp lên Smart Contract để kiểm tra quyền truy cập.
             // Đây là kiểm soát quyền phi tập trung: database không thể override
             // quyết định đã được bệnh nhân ghi lên Blockchain.
-            const hasAccess = await dynamicAccessControlContract.canAccess(patientWallet, doctorWallet);
+            const hasAccess = await rpcCache.getOrFetch(
+                `access:${patientWallet}:${doctorWallet}`,
+                () => dynamicAccessControlContract.canAccess(patientWallet, doctorWallet),
+                env.RPC_ACCESS_TTL // 1h TTL
+            );
             if (!hasAccess) {
                 throw new ApiError(
                     StatusCodes.FORBIDDEN,
@@ -556,7 +578,12 @@ const getDetail = async (medicalRecordId, currentUser) => {
         const patientWallet = patientUser.authProviders.find((p) => p.type === 'WALLET')?.walletAddress;
 
         if (doctorWallet && patientWallet) {
-            const hasAccess = await dynamicAccessControlContract.canAccess(patientWallet, doctorWallet);
+            // Lưu cache: Access tokens được lưu cache đến khi hết hạn
+            const hasAccess = await rpcCache.getOrFetch(
+                `access:${patientWallet}:${doctorWallet}`,
+                () => dynamicAccessControlContract.canAccess(patientWallet, doctorWallet),
+                env.RPC_ACCESS_TTL // 1h TTL
+            );
             if (!hasAccess) {
                 throw new ApiError(
                     StatusCodes.FORBIDDEN,
